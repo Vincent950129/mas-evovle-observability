@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MAS-Evolve Observability</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button class="brand brand-button" data-tab="landing" title="Back to MAS-Evolve home">
+        <span class="logo">EO</span>
+        <h1>MAS-Evolve Observability</h1>
+      </button>
+      <nav class="tabs" id="tabs">
+        <button data-tab="landing" class="tab tab-root" title="Root">⌂</button>
+        <button data-tab="home" class="tab">Overview</button>
+        <button data-tab="datasets" class="tab">Benchmark</button>
+        <button data-tab="results" class="tab">Results</button>
+        <button data-tab="insights" class="tab">Insights</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ============ ROOT LANDING ============ -->
+      <section id="landing" class="view active landing-view">
+        <div class="landing-hero">
+          <div class="landing-eyebrow">MAS-Evolve</div>
+          <h2 class="landing-title">What can evolve in a multi-agent system?</h2>
+          <p class="landing-sub">
+            Three orthogonal axes a multi-agent stack can co-evolve along.
+            Pick one to inspect what we have today, what is being explored,
+            and what is still to come.
+          </p>
+        </div>
+
+        <!-- Higher-level picture, in two stacked panels:
+              1. System flow      — Task + Capability E feed a Lead agent
+                 (with bidirectional Memory). Lead orchestrates one or
+                 more Sub-agent(s); Sub-agent(s) emit Response y; feedback
+                 loops back into the Lead.
+              2. Capability harness — the *Agent* (L2) is a composite that
+                 wraps the 5 primitives Instruction · Context · Model ·
+                 Tools · Skills (L1). The three evolving axes (Tools,
+                 Skills, Agents) match the three cards below. -->
+        <figure class="cd-figure" aria-label="System flow and its evolving capability harness">
+          <figcaption class="cd-figcap">
+            <span class="cd-figcap-eyebrow">Higher-level picture</span>
+            <span class="cd-figcap-title">
+              A multi-agent system is wired from a
+              <span class="cd-figcap-hl">capability harness</span>
+              — and the three axes we evolve are inside it.
+            </span>
+          </figcaption>
+
+          <div class="cd-canvas">
+            <!-- ============== Panel 1: System flow ============== -->
+            <section class="cd-system" aria-label="System flow">
+              <div class="cd-panel-head">
+                <span class="cd-step">1</span>
+                <span class="cd-panel-title">Agent learning framework</span>
+                <span class="cd-panel-sub">inputs · agents · memory · environment · feedback</span>
+              </div>
+
+              <div class="cd-system-row">
+                <!-- Inputs: Task x AND Capability E -->
+                <div class="cd-inputs">
+                  <div class="cd-input">
+                    <span class="cd-input-name">Task</span>
+                    <span class="cd-input-var">x</span>
+                  </div>
+                  <div class="cd-input cd-input--cap">
+                    <span class="cd-input-name">Capability</span>
+                    <span class="cd-input-var">E</span>
+                    <span class="cd-input-foot">harness · evolving</span>
+                  </div>
+                </div>
+
+                <div class="cd-arrow cd-arrow--right" aria-hidden="true">
+                  <span class="cd-arrow-line"></span>
+                  <span class="cd-arrow-head"></span>
+                </div>
+
+                <!-- Lead agent + Memory (above, bidirectional) -->
+                <div class="cd-lead-block">
+                  <div class="cd-mem">
+                    <span class="cd-mem-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <rect x="6" y="6" width="12" height="12" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                        <rect x="9" y="9" width="6" height="6" fill="currentColor"/>
+                        <path d="M3 9h3M3 12h3M3 15h3M18 9h3M18 12h3M18 15h3M9 3v3M12 3v3M15 3v3M9 18v3M12 18v3M15 18v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                      </svg>
+                    </span>
+                    <span class="cd-mem-name">Memory</span>
+                  </div>
+                  <div class="cd-mem-link" aria-hidden="true">
+                    <span class="cd-mem-link-up">▲</span>
+                    <span class="cd-mem-link-down">▼</span>
+                  </div>
+                  <div class="cd-lead">
+                    <div class="cd-agent-core">
+                      <span class="cd-spark cd-spark--a"></span>
+                      <span class="cd-spark cd-spark--b"></span>
+                      <span class="cd-spark cd-spark--c"></span>
+                    </div>
+                    <div class="cd-node-label">Lead <em>agent</em></div>
+                  </div>
+                </div>
+
+                <!-- Orchestration -->
+                <div class="cd-orch" aria-hidden="true">
+                  <span class="cd-orch-label">Orchestration</span>
+                  <div class="cd-arrow cd-arrow--right cd-arrow--orch">
+                    <span class="cd-arrow-line"></span>
+                    <span class="cd-arrow-head"></span>
+                  </div>
+                  <span class="cd-orch-sub">shared task list<br/>or a flow</span>
+                </div>
+
+                <!-- Sub-agent(s) -->
+                <div class="cd-subs">
+                  <div class="cd-sub-grid">
+                    <div class="cd-sub">
+                      <div class="cd-sub-core"></div>
+                      <div class="cd-sub-name">A</div>
+                    </div>
+                    <div class="cd-sub">
+                      <div class="cd-sub-core"></div>
+                      <div class="cd-sub-name">B</div>
+                    </div>
+                    <div class="cd-sub cd-sub--more">
+                      <div class="cd-sub-core"></div>
+                      <div class="cd-sub-name">…</div>
+                    </div>
+                  </div>
+                  <div class="cd-sub-foot">Sub-agent(s) · 1..N</div>
+                </div>
+
+                <div class="cd-arrow cd-arrow--right" aria-hidden="true">
+                  <span class="cd-arrow-line"></span>
+                  <span class="cd-arrow-head"></span>
+                </div>
+
+                <div class="cd-response">
+                  <span class="cd-input-name">Response</span>
+                  <span class="cd-input-var">y</span>
+                </div>
+
+                <div class="cd-arrow cd-arrow--right cd-arrow--env" aria-hidden="true">
+                  <span class="cd-arrow-line"></span>
+                  <span class="cd-arrow-head"></span>
+                </div>
+
+                <!-- Environment: where the response lands and feedback is born. -->
+                <div class="cd-env" aria-label="environment">
+                  <span class="cd-env-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                      <path d="M3 12h18M12 3v18" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                      <path d="M12 3c3 3 4.5 6 4.5 9s-1.5 6-4.5 9c-3-3-4.5-6-4.5-9S9 6 12 3z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    </svg>
+                  </span>
+                  <span class="cd-env-name">Environment</span>
+                </div>
+              </div>
+
+              <!-- Feedback loop: from Environment (after Response y) back
+                   into the Lead agent. -->
+              <div class="cd-feedback" aria-label="feedback loop from environment back into the Lead agent">
+                <span class="cd-feedback-loop" aria-hidden="true"></span>
+                <span class="cd-feedback-arrow" aria-hidden="true"></span>
+                <span class="cd-feedback-dot" aria-hidden="true"></span>
+                <span class="cd-feedback-label">Feedback <em>f</em></span>
+              </div>
+            </section>
+
+            <!-- ============== Panel 2: Capability harness ============== -->
+            <section class="cd-harness" aria-label="External capability harness">
+              <div class="cd-panel-head">
+                <span class="cd-step">2</span>
+                <span class="cd-panel-title">
+                  External capability <em>E</em> · harness
+                </span>
+                <span class="cd-panel-sub">what each agent is wired from</span>
+                <span class="cd-harness-evo">EVOLVING</span>
+              </div>
+
+              <!-- L2: the Agent composite — wraps the 5 L1 primitives. -->
+              <div class="cd-l2 cd-l2--evo">
+                <div class="cd-l2-head">
+                  <span class="cd-l2-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16"><circle cx="5" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 13c0-2 1.5-3.5 3-3.5s3 1.5 3 3.5M8 13c0-2 1.5-3.5 3-3.5s3 1.5 3 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                  </span>
+                  <span class="cd-l2-name">Agent <span class="cd-l2-rank">L2 · composite</span></span>
+                  <span class="cd-l2-tag">each agent (lead or sub) wires the 5 primitives below</span>
+                  <span class="cd-cap-ping cd-l2-ping" aria-hidden="true"></span>
+                </div>
+
+                <div class="cd-l1-grid">
+                  <div class="cd-prim" data-prim="instruction">
+                    <span class="cd-prim-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16"><path d="M3 3h2v2H3zM7 3.7h6v1.6H7zM3 7h2v2H3zM7 7.7h6v1.6H7zM3 11h2v2H3zM7 11.7h6v1.6H7z"/></svg>
+                    </span>
+                    <span class="cd-prim-name">Instruction</span>
+                  </div>
+                  <div class="cd-prim" data-prim="context">
+                    <span class="cd-prim-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16"><path d="M3 2h7l3 3v9H3z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2v3h3M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+                    </span>
+                    <span class="cd-prim-name">Context</span>
+                  </div>
+                  <div class="cd-prim" data-prim="model">
+                    <span class="cd-prim-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16"><path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z"/></svg>
+                    </span>
+                    <span class="cd-prim-name">Model</span>
+                  </div>
+                  <div class="cd-prim cd-prim--evo" data-prim="tools">
+                    <span class="cd-prim-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16"><path d="M10.5 1.5l4 4-2 2-1-1-2 2 3 3-2 2-3-3-2 2 1 1-2 2-4-4 6-6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                    </span>
+                    <span class="cd-prim-name">Tools</span>
+                    <span class="cd-cap-ping" aria-hidden="true"></span>
+                  </div>
+                  <div class="cd-prim cd-prim--evo" data-prim="skills">
+                    <span class="cd-prim-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16"><path d="M5 2h3v3h3v3h-3v3H5v-3H2V5h3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="11" cy="11" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+                    </span>
+                    <span class="cd-prim-name">Skills</span>
+                    <span class="cd-cap-ping" aria-hidden="true"></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cd-harness-foot">
+                <span class="cd-evo-leg">
+                  <i></i> evolving in this study:
+                  <strong>Tools</strong> · <strong>Skills</strong>
+                  <span class="cd-evo-sep">at L1</span>
+                  · <strong>Agents</strong>
+                  <span class="cd-evo-sep">at L2</span>
+                </span>
+              </div>
+            </section>
+          </div>
+        </figure>
+
+        <div class="landing-grid">
+          <!-- ====== Tools ====== -->
+          <button class="landing-card landing-card--tools" data-tab="home" type="button">
+            <div class="landing-card-head">
+              <span class="landing-card-status status-live">Live</span>
+              <h3>Tools</h3>
+            </div>
+            <p class="landing-card-desc">
+              How the tool catalog evolves over time — and how agent
+              memory, selection, and usage hold up under capability drift.
+            </p>
+
+            <div class="tools-anim" aria-hidden="true">
+              <div class="tools-anim-stages">
+                <!-- ============================== T1 ============================== -->
+                <!-- 3 tools · agent picks 1 → succeeds. -->
+                <div class="tools-anim-stage" data-stage="T1">
+                  <div class="tools-anim-label">T₁</div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:.35s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="hop" d="M 30 0 L 30 12" style="--d:.55s"/>
+                    </svg>
+                  </div>
+                  <div class="tools-anim-row">
+                    <span class="tool-chip" style="--d:.0s"></span>
+                    <span class="tool-chip tool-chip--selected" style="--d:.1s; --ds:.65s"></span>
+                    <span class="tool-chip" style="--d:.2s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                    </defs>
+                    <circle class="arg" cx="27.5" cy="4" r="0.8" style="--d:.85s"/>
+                    <circle class="arg" cx="30"   cy="4" r="0.8" style="--d:.85s"/>
+                    <circle class="arg" cx="32.5" cy="4" r="0.8" style="--d:.85s"/>
+                    <circle class="hit" cx="30" cy="13" r="3.0" style="--d:.85s"/>
+                    <path   class="ok"  d="M28.2 13 L 29.6 14.6 L 32 11.8" style="--d:.85s"/>
+                  </svg>
+                  <div class="tools-anim-memory">
+                    <span class="mem-cell mem-ok" style="--d:1.1s"></span>
+                  </div>
+                </div>
+
+                <!-- ============================== T2 ============================== -->
+                <!-- 4 tools · agent runs a 2-hop trajectory; both succeed. -->
+                <div class="tools-anim-stage" data-stage="T2">
+                  <div class="tools-anim-label">T₂</div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:.95s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="hop" d="M 30 0 L 18 12" style="--d:1.15s"/>
+                      <path class="hop" d="M 30 0 L 42 12" style="--d:1.30s"/>
+                    </svg>
+                  </div>
+                  <div class="tools-anim-row">
+                    <span class="tool-chip tool-chip--selected" style="--d:.6s; --ds:1.25s"></span>
+                    <span class="tool-chip" style="--d:.7s"></span>
+                    <span class="tool-chip tool-chip--selected" style="--d:.8s; --ds:1.40s"></span>
+                    <span class="tool-chip tool-chip--new" style="--d:.9s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                    </defs>
+                    <path   class="seq" d="M 18 13 L 34 13" style="--d:1.55s"/>
+                    <circle class="arg" cx="11.5" cy="4" r="0.8" style="--d:1.50s"/>
+                    <circle class="arg" cx="14"   cy="4" r="0.8" style="--d:1.50s"/>
+                    <circle class="arg" cx="16.5" cy="4" r="0.8" style="--d:1.50s"/>
+                    <circle class="hit" cx="14" cy="13" r="3.0" style="--d:1.50s"/>
+                    <path   class="ok"  d="M12.2 13 L 13.6 14.6 L 16 11.8" style="--d:1.50s"/>
+                    <circle class="arg" cx="35.5" cy="4" r="0.8" style="--d:1.75s"/>
+                    <circle class="arg" cx="38"   cy="4" r="0.8" style="--d:1.75s"/>
+                    <circle class="arg" cx="40.5" cy="4" r="0.8" style="--d:1.75s"/>
+                    <circle class="hit" cx="38" cy="13" r="3.0" style="--d:1.75s"/>
+                    <path   class="ok"  d="M36.2 13 L 37.6 14.6 L 40 11.8" style="--d:1.75s"/>
+                  </svg>
+                  <div class="tools-anim-memory">
+                    <span class="mem-cell mem-ok" style="--d:2.05s"></span>
+                    <span class="mem-cell mem-ok" style="--d:2.20s"></span>
+                  </div>
+                </div>
+
+                <!-- ============================== T3 ============================== -->
+                <!-- 6 tools · selection challenge: 3 candidates blip; agent
+                     commits to 2 selected tools; one past run failed. -->
+                <div class="tools-anim-stage" data-stage="T3">
+                  <div class="tools-anim-label">T₃</div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:1.75s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="cand" d="M 30 0 L 8 12"  style="--d:1.95s"/>
+                      <path class="cand" d="M 30 0 L 50 12" style="--d:2.00s"/>
+                      <path class="cand" d="M 30 0 L 30 12" style="--d:2.05s"/>
+                      <path class="hop"  d="M 30 0 L 18 12" style="--d:2.20s"/>
+                      <path class="hop"  d="M 30 0 L 42 12" style="--d:2.35s"/>
+                    </svg>
+                  </div>
+                  <div class="tools-anim-row">
+                    <span class="tool-chip tool-chip--selected" style="--d:1.2s; --ds:2.30s"></span>
+                    <span class="tool-chip" style="--d:1.3s"></span>
+                    <span class="tool-chip" style="--d:1.4s"></span>
+                    <span class="tool-chip tool-chip--selected" style="--d:1.5s; --ds:2.45s"></span>
+                    <span class="tool-chip tool-chip--new" style="--d:1.6s"></span>
+                    <span class="tool-chip tool-chip--new" style="--d:1.7s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                      <marker id="trajArrowWrong" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(239,68,68,0.85)"/>
+                      </marker>
+                    </defs>
+                    <path   class="seq" d="M 18 13 L 38 13" style="--d:2.55s"/>
+                    <circle class="arg" cx="11.5" cy="4" r="0.8" style="--d:2.50s"/>
+                    <circle class="arg" cx="14"   cy="4" r="0.8" style="--d:2.50s"/>
+                    <circle class="arg" cx="16.5" cy="4" r="0.8" style="--d:2.50s"/>
+                    <circle class="hit" cx="14" cy="13" r="3.0" style="--d:2.50s"/>
+                    <path   class="ok"  d="M12.2 13 L 13.6 14.6 L 16 11.8" style="--d:2.50s"/>
+                    <circle class="arg" cx="39.5" cy="4" r="0.8" style="--d:2.75s"/>
+                    <circle class="arg" cx="42"   cy="4" r="0.8" style="--d:2.75s"/>
+                    <circle class="arg" cx="44.5" cy="4" r="0.8" style="--d:2.75s"/>
+                    <circle class="hit" cx="42" cy="13" r="3.0" style="--d:2.75s"/>
+                    <path   class="ok"  d="M40.2 13 L 41.6 14.6 L 44 11.8" style="--d:2.75s"/>
+                    <!-- Trajectory mistake: agent has to re-call an earlier
+                         tool (back-loop arc above the forward chain). -->
+                    <path class="seq--wrong" d="M 42 10 Q 28 0, 14 10" style="--d:2.85s"/>
+                  </svg>
+                  <div class="tools-anim-memory">
+                    <span class="mem-cell mem-ok"   style="--d:3.00s"></span>
+                    <span class="mem-cell mem-ok"   style="--d:3.15s"></span>
+                    <span class="mem-cell mem-fail" style="--d:3.30s"></span>
+                  </div>
+                </div>
+
+                <!-- ============================== T4 ============================== -->
+                <!-- 8 tools · heavier selection (more candidates), 3-hop
+                     trajectory, one mid-call usage error (red ✗). -->
+                <div class="tools-anim-stage" data-stage="T4">
+                  <div class="tools-anim-label">T₄</div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:2.65s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="cand" d="M 30 0 L 6 12"  style="--d:2.85s"/>
+                      <path class="cand" d="M 30 0 L 22 12" style="--d:2.90s"/>
+                      <path class="cand" d="M 30 0 L 38 12" style="--d:2.95s"/>
+                      <path class="cand" d="M 30 0 L 54 12" style="--d:3.00s"/>
+                      <path class="hop"  d="M 30 0 L 14 12" style="--d:3.15s"/>
+                      <path class="hop"  d="M 30 0 L 30 12" style="--d:3.30s"/>
+                      <path class="hop"  d="M 30 0 L 46 12" style="--d:3.45s"/>
+                    </svg>
+                  </div>
+                  <div class="tools-anim-row">
+                    <span class="tool-chip tool-chip--selected" style="--d:1.9s; --ds:3.25s"></span>
+                    <span class="tool-chip" style="--d:2.0s"></span>
+                    <span class="tool-chip" style="--d:2.1s"></span>
+                    <span class="tool-chip tool-chip--selected" style="--d:2.2s; --ds:3.40s"></span>
+                    <span class="tool-chip" style="--d:2.3s"></span>
+                    <span class="tool-chip tool-chip--selected" style="--d:2.4s; --ds:3.55s"></span>
+                    <span class="tool-chip tool-chip--new" style="--d:2.5s"></span>
+                    <span class="tool-chip tool-chip--new" style="--d:2.6s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                      <marker id="trajArrowWrong" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(239,68,68,0.85)"/>
+                      </marker>
+                    </defs>
+                    <path   class="seq" d="M 16 13 L 26 13" style="--d:3.65s"/>
+                    <path   class="seq" d="M 34 13 L 44 13" style="--d:3.85s"/>
+                    <circle class="arg" cx="9.5"  cy="4" r="0.8" style="--d:3.60s"/>
+                    <circle class="arg" cx="12"   cy="4" r="0.8" style="--d:3.60s"/>
+                    <circle class="arg" cx="14.5" cy="4" r="0.8" style="--d:3.60s"/>
+                    <circle class="hit" cx="12" cy="13" r="3.0" style="--d:3.60s"/>
+                    <path   class="ok"  d="M10.2 13 L 11.6 14.6 L 14 11.8" style="--d:3.60s"/>
+                    <circle class="arg" cx="27.5" cy="4" r="0.8" style="--d:3.85s"/>
+                    <circle class="arg" cx="30"   cy="4" r="0.8" style="--d:3.85s"/>
+                    <circle class="arg" cx="32.5" cy="4" r="0.8" style="--d:3.85s"/>
+                    <g class="miss" style="--d:3.85s">
+                      <circle cx="30" cy="13" r="3.8"/>
+                      <path d="M27.4 10.4 L 32.6 15.6 M 32.6 10.4 L 27.4 15.6" />
+                    </g>
+                    <circle class="arg" cx="45.5" cy="4" r="0.8" style="--d:4.10s"/>
+                    <circle class="arg" cx="48"   cy="4" r="0.8" style="--d:4.10s"/>
+                    <circle class="arg" cx="50.5" cy="4" r="0.8" style="--d:4.10s"/>
+                    <circle class="hit" cx="48" cy="13" r="3.0" style="--d:4.10s"/>
+                    <path   class="ok"  d="M46.2 13 L 47.6 14.6 L 50 11.8" style="--d:4.10s"/>
+                    <!-- Trajectory mistake: agent jumps backward two hops
+                         (out-of-order call) before recovering. -->
+                    <path class="seq--wrong" d="M 48 10 Q 30 -2, 12 10" style="--d:4.20s"/>
+                  </svg>
+                  <div class="tools-anim-memory">
+                    <span class="mem-cell mem-fail" style="--d:4.30s"></span>
+                    <span class="mem-cell mem-ok"   style="--d:4.40s"></span>
+                    <span class="mem-cell mem-fail" style="--d:4.50s"></span>
+                    <span class="mem-cell mem-fail" style="--d:4.60s"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="tools-anim-legend">
+                <span class="tools-anim-leg"><i class="dot dot--carry"></i> tool (carried forward)</span>
+                <span class="tools-anim-leg"><i class="dot dot--new"></i> new tool</span>
+                <span class="tools-anim-leg"><i class="dot dot--agent"></i> agent</span>
+                <span class="tools-anim-leg"><i class="dot dot--sel"></i> selected tool</span>
+                <span class="tools-anim-leg"><i class="dot dot--cand"></i> selection candidates</span>
+                <span class="tools-anim-leg"><i class="dot dot--args"></i> tool-call arguments</span>
+                <span class="tools-anim-leg"><i class="dot dot--trajwrong"></i> trajectory mistake</span>
+                <span class="tools-anim-leg"><i class="dot dot--miss"></i> tool-usage error</span>
+                <span class="tools-anim-leg"><i class="dot dot--memok"></i> memory · success</span>
+                <span class="tools-anim-leg"><i class="dot dot--memfail"></i> memory · failure</span>
+              </div>
+            </div>
+
+            <span class="landing-card-cta">Open tools observability →</span>
+          </button>
+
+          <!-- ====== Skills ====== -->
+          <!-- Mirrors the Tools card structure (T₁..T₄ stages, agent, follow
+               trajectory) but flips the core challenge: the skill library is
+               LATENT. An oracle library is held out and never shown; the agent
+               must SELF-EVOLVE — author its own covering skills (skill.write),
+               then SELECT & FOLLOW them. Pressure = coverage gaps + redundancy
+               + follow mistakes as more underlying skills are required. -->
+          <div class="landing-card landing-card--skills">
+            <div class="landing-card-head">
+              <span class="landing-card-status status-preview">Preview</span>
+              <h3>Skills</h3>
+            </div>
+            <p class="landing-card-desc">
+              The skill library is <strong>latent and expanding</strong>: a held-out
+              oracle library grows over time (S₁⊊S₂⊊…) and is never shown. We test
+              whether an agent can <strong>self-evolve</strong> — author its own
+              reusable skills (analogues of the oracle), then
+              <strong>select &amp; follow</strong> them — as the underlying library
+              keeps growing.
+            </p>
+
+            <div class="tools-anim skills-anim" aria-hidden="true">
+              <div class="tools-anim-stages">
+                <!-- ============================== T1 ============================== -->
+                <!-- 2 oracle skills · agent authors a covering skill for each;
+                     selects one and follows it cleanly. -->
+                <div class="tools-anim-stage" data-stage="T1">
+                  <div class="tools-anim-label">T₁</div>
+                  <!-- Oracle library at T₁: 2 skills (both newly introduced). -->
+                  <div class="oracle-row">
+                    <span class="og-tok og-new" style="--d:.05s"></span>
+                    <span class="og-tok og-new" style="--d:.15s"></span>
+                  </div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:.35s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="hop" d="M 30 0 L 22 12" style="--d:.55s"/>
+                      <path class="hop" d="M 30 0 L 38 12" style="--d:.62s"/>
+                    </svg>
+                  </div>
+                  <!-- Agent's authored coverage of the latent library. -->
+                  <div class="skill-slots">
+                    <span class="skill-slot is-covered is-selected" style="--d:.1s"></span>
+                    <span class="skill-slot is-covered is-new" style="--d:.2s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                    </defs>
+                    <circle class="arg" cx="27.5" cy="4" r="0.8" style="--d:.85s"/>
+                    <circle class="arg" cx="30"   cy="4" r="0.8" style="--d:.85s"/>
+                    <circle class="arg" cx="32.5" cy="4" r="0.8" style="--d:.85s"/>
+                    <circle class="hit" cx="30" cy="13" r="3.0" style="--d:.85s"/>
+                    <path   class="ok"  d="M28.2 13 L 29.6 14.6 L 32 11.8" style="--d:.85s"/>
+                  </svg>
+                </div>
+
+                <!-- ============================== T2 ============================== -->
+                <!-- 3 oracle skills · all covered; one near-duplicate authored
+                     (minor redundancy); follows a 2-step skill, both ✓. -->
+                <div class="tools-anim-stage" data-stage="T2">
+                  <div class="tools-anim-label">T₂</div>
+                  <!-- Oracle library at T₂: 2 carried + 2 new = 4 skills. -->
+                  <div class="oracle-row">
+                    <span class="og-tok" style="--d:.55s"></span>
+                    <span class="og-tok" style="--d:.65s"></span>
+                    <span class="og-tok og-new" style="--d:.80s"></span>
+                    <span class="og-tok og-new" style="--d:.92s"></span>
+                  </div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:.95s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="hop" d="M 30 0 L 18 12" style="--d:1.15s"/>
+                      <path class="hop" d="M 30 0 L 30 12" style="--d:1.22s"/>
+                      <path class="hop" d="M 30 0 L 42 12" style="--d:1.29s"/>
+                    </svg>
+                  </div>
+                  <div class="skill-slots">
+                    <span class="skill-slot is-covered is-selected" style="--d:.6s"></span>
+                    <span class="skill-slot is-covered" style="--d:.7s"></span>
+                    <span class="skill-slot is-covered is-new" style="--d:.85s"></span>
+                    <span class="skill-slot is-covered is-new" style="--d:.95s"></span>
+                    <span class="skill-extra" style="--d:1.1s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                    </defs>
+                    <path   class="seq" d="M 18 13 L 34 13" style="--d:1.55s"/>
+                    <circle class="arg" cx="11.5" cy="4" r="0.8" style="--d:1.50s"/>
+                    <circle class="arg" cx="14"   cy="4" r="0.8" style="--d:1.50s"/>
+                    <circle class="arg" cx="16.5" cy="4" r="0.8" style="--d:1.50s"/>
+                    <circle class="hit" cx="14" cy="13" r="3.0" style="--d:1.50s"/>
+                    <path   class="ok"  d="M12.2 13 L 13.6 14.6 L 16 11.8" style="--d:1.50s"/>
+                    <circle class="arg" cx="35.5" cy="4" r="0.8" style="--d:1.75s"/>
+                    <circle class="arg" cx="38"   cy="4" r="0.8" style="--d:1.75s"/>
+                    <circle class="arg" cx="40.5" cy="4" r="0.8" style="--d:1.75s"/>
+                    <circle class="hit" cx="38" cy="13" r="3.0" style="--d:1.75s"/>
+                    <path   class="ok"  d="M36.2 13 L 37.6 14.6 L 40 11.8" style="--d:1.75s"/>
+                  </svg>
+                </div>
+
+                <!-- ============================== T3 ============================== -->
+                <!-- 4 oracle skills · 3 covered + 1 coverage GAP (missed an
+                     oracle skill) + 1 duplicate; follow has an out-of-order
+                     mistake (red back-arc). -->
+                <div class="tools-anim-stage" data-stage="T3">
+                  <div class="tools-anim-label">T₃</div>
+                  <!-- Oracle library at T₃: 4 carried + 2 new = 6 skills. -->
+                  <div class="oracle-row">
+                    <span class="og-tok" style="--d:1.15s"></span>
+                    <span class="og-tok" style="--d:1.20s"></span>
+                    <span class="og-tok" style="--d:1.25s"></span>
+                    <span class="og-tok" style="--d:1.30s"></span>
+                    <span class="og-tok og-new" style="--d:1.45s"></span>
+                    <span class="og-tok og-new" style="--d:1.57s"></span>
+                  </div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:1.75s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="hop" d="M 30 0 L 14 12" style="--d:1.95s"/>
+                      <path class="hop" d="M 30 0 L 30 12" style="--d:2.02s"/>
+                      <path class="hop" d="M 30 0 L 46 12" style="--d:2.09s"/>
+                    </svg>
+                  </div>
+                  <!-- The gap lands on a newly introduced skill — agent hasn't
+                       authored coverage yet for one of the freshly-added cohort. -->
+                  <div class="skill-slots">
+                    <span class="skill-slot is-covered is-selected" style="--d:1.2s"></span>
+                    <span class="skill-slot is-covered" style="--d:1.3s"></span>
+                    <span class="skill-slot is-covered" style="--d:1.4s"></span>
+                    <span class="skill-slot is-covered" style="--d:1.5s"></span>
+                    <span class="skill-slot is-covered is-new" style="--d:1.6s"></span>
+                    <span class="skill-slot is-gap is-new" style="--d:1.7s"></span>
+                    <span class="skill-extra" style="--d:1.8s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                      <marker id="trajArrowWrong" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(239,68,68,0.85)"/>
+                      </marker>
+                    </defs>
+                    <path   class="seq" d="M 18 13 L 38 13" style="--d:2.55s"/>
+                    <circle class="arg" cx="11.5" cy="4" r="0.8" style="--d:2.50s"/>
+                    <circle class="arg" cx="14"   cy="4" r="0.8" style="--d:2.50s"/>
+                    <circle class="arg" cx="16.5" cy="4" r="0.8" style="--d:2.50s"/>
+                    <circle class="hit" cx="14" cy="13" r="3.0" style="--d:2.50s"/>
+                    <path   class="ok"  d="M12.2 13 L 13.6 14.6 L 16 11.8" style="--d:2.50s"/>
+                    <circle class="arg" cx="39.5" cy="4" r="0.8" style="--d:2.75s"/>
+                    <circle class="arg" cx="42"   cy="4" r="0.8" style="--d:2.75s"/>
+                    <circle class="arg" cx="44.5" cy="4" r="0.8" style="--d:2.75s"/>
+                    <circle class="hit" cx="42" cy="13" r="3.0" style="--d:2.75s"/>
+                    <path   class="ok"  d="M40.2 13 L 41.6 14.6 L 44 11.8" style="--d:2.75s"/>
+                    <!-- Follow mistake: agent re-reads / re-runs an earlier
+                         step of the skill out of order. -->
+                    <path class="seq--wrong" d="M 42 10 Q 28 0, 14 10" style="--d:2.85s"/>
+                  </svg>
+                </div>
+
+                <!-- ============================== T4 ============================== -->
+                <!-- 5 oracle skills · 3 covered + 2 GAPS + 2 duplicates; follow
+                     degrades: one mid-step usage miss (✗) + out-of-order arc. -->
+                <div class="tools-anim-stage" data-stage="T4">
+                  <div class="tools-anim-label">T₄</div>
+                  <!-- Oracle library at T₄: 6 carried + 2 new = 8 skills. -->
+                  <div class="oracle-row">
+                    <span class="og-tok" style="--d:1.85s"></span>
+                    <span class="og-tok" style="--d:1.90s"></span>
+                    <span class="og-tok" style="--d:1.95s"></span>
+                    <span class="og-tok" style="--d:2.00s"></span>
+                    <span class="og-tok" style="--d:2.05s"></span>
+                    <span class="og-tok" style="--d:2.10s"></span>
+                    <span class="og-tok og-new" style="--d:2.25s"></span>
+                    <span class="og-tok og-new" style="--d:2.37s"></span>
+                  </div>
+                  <div class="anim-actor">
+                    <svg class="agent-icon" viewBox="0 0 22 24" style="--d:2.65s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <svg class="agent-picks" viewBox="0 0 60 12" preserveAspectRatio="none">
+                      <path class="hop" d="M 30 0 L 12 12" style="--d:2.85s"/>
+                      <path class="hop" d="M 30 0 L 30 12" style="--d:2.92s"/>
+                      <path class="hop" d="M 30 0 L 48 12" style="--d:2.99s"/>
+                    </svg>
+                  </div>
+                  <!-- Coverage now lags behind the expanding library — gaps on a
+                       long-tail carried skill AND on the newest addition. -->
+                  <div class="skill-slots">
+                    <span class="skill-slot is-covered is-selected" style="--d:1.9s"></span>
+                    <span class="skill-slot is-covered" style="--d:2.0s"></span>
+                    <span class="skill-slot is-covered" style="--d:2.05s"></span>
+                    <span class="skill-slot is-covered" style="--d:2.1s"></span>
+                    <span class="skill-slot is-covered" style="--d:2.15s"></span>
+                    <span class="skill-slot is-gap" style="--d:2.2s"></span>
+                    <span class="skill-slot is-covered is-new" style="--d:2.3s"></span>
+                    <span class="skill-slot is-gap is-new" style="--d:2.4s"></span>
+                  </div>
+                  <svg class="anim-trajectory" viewBox="0 0 60 22" preserveAspectRatio="none">
+                    <defs>
+                      <marker id="trajArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(30,64,175,0.85)"/>
+                      </marker>
+                      <marker id="trajArrowWrong" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,0 L 6,3 L 0,6 Z" fill="rgba(239,68,68,0.85)"/>
+                      </marker>
+                    </defs>
+                    <path   class="seq" d="M 16 13 L 26 13" style="--d:3.65s"/>
+                    <path   class="seq" d="M 34 13 L 44 13" style="--d:3.85s"/>
+                    <circle class="arg" cx="9.5"  cy="4" r="0.8" style="--d:3.60s"/>
+                    <circle class="arg" cx="12"   cy="4" r="0.8" style="--d:3.60s"/>
+                    <circle class="arg" cx="14.5" cy="4" r="0.8" style="--d:3.60s"/>
+                    <circle class="hit" cx="12" cy="13" r="3.0" style="--d:3.60s"/>
+                    <path   class="ok"  d="M10.2 13 L 11.6 14.6 L 14 11.8" style="--d:3.60s"/>
+                    <circle class="arg" cx="27.5" cy="4" r="0.8" style="--d:3.85s"/>
+                    <circle class="arg" cx="30"   cy="4" r="0.8" style="--d:3.85s"/>
+                    <circle class="arg" cx="32.5" cy="4" r="0.8" style="--d:3.85s"/>
+                    <g class="miss" style="--d:3.85s">
+                      <circle cx="30" cy="13" r="3.8"/>
+                      <path d="M27.4 10.4 L 32.6 15.6 M 32.6 10.4 L 27.4 15.6" />
+                    </g>
+                    <circle class="arg" cx="45.5" cy="4" r="0.8" style="--d:4.10s"/>
+                    <circle class="arg" cx="48"   cy="4" r="0.8" style="--d:4.10s"/>
+                    <circle class="arg" cx="50.5" cy="4" r="0.8" style="--d:4.10s"/>
+                    <circle class="hit" cx="48" cy="13" r="3.0" style="--d:4.10s"/>
+                    <path   class="ok"  d="M46.2 13 L 47.6 14.6 L 50 11.8" style="--d:4.10s"/>
+                    <!-- Follow mistake: skips back two steps of the skill. -->
+                    <path class="seq--wrong" d="M 48 10 Q 30 -2, 12 10" style="--d:4.20s"/>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="tools-anim-legend">
+                <span class="tools-anim-leg"><i class="dot dot--agent"></i> agent (self-evolving)</span>
+                <span class="tools-anim-leg"><i class="dot dot--oracle"></i> oracle skill · held out</span>
+                <span class="tools-anim-leg"><i class="dot dot--newskill"></i> new latent skill (this step)</span>
+                <span class="tools-anim-leg"><i class="dot dot--skillok"></i> self-authored · covers oracle</span>
+                <span class="tools-anim-leg"><i class="dot dot--sel"></i> selected skill (follow)</span>
+                <span class="tools-anim-leg"><i class="dot dot--skillgap"></i> coverage gap</span>
+                <span class="tools-anim-leg"><i class="dot dot--skilldup"></i> redundant / near-duplicate</span>
+                <span class="tools-anim-leg"><i class="dot dot--args"></i> follow steps (args)</span>
+                <span class="tools-anim-leg"><i class="dot dot--trajwrong"></i> follow mistake</span>
+                <span class="tools-anim-leg"><i class="dot dot--miss"></i> step-usage error</span>
+              </div>
+            </div>
+
+            <span class="landing-card-cta landing-card-cta--muted">Self-evolving skills · benchmark in progress</span>
+          </div>
+
+          <!-- ====== Agents ====== -->
+          <div class="landing-card landing-card--agents landing-card--todo" aria-disabled="true">
+            <div class="landing-card-head">
+              <span class="landing-card-status status-todo">TODO</span>
+              <h3>Agents</h3>
+            </div>
+            <p class="landing-card-desc">
+              How agent roles, hierarchies, and routing policies should
+              themselves evolve as the surrounding tool and skill catalogs
+              shift. Not yet instrumented.
+            </p>
+            <div class="landing-card-placeholder">
+              <div class="placeholder-row">
+                <span class="placeholder-bar w-50"></span>
+                <span class="placeholder-bar w-40"></span>
+              </div>
+              <div class="placeholder-row">
+                <span class="placeholder-bar w-30"></span>
+                <span class="placeholder-bar w-60"></span>
+              </div>
+              <div class="placeholder-row">
+                <span class="placeholder-bar w-45"></span>
+              </div>
+            </div>
+            <span class="landing-card-cta landing-card-cta--muted">Coming soon</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ HOME (Tools overview) ============ -->
+      <section id="home" class="view">
+        <div id="home-summary"><div class="empty">Loading summary…</div></div>
+      </section>
+
+      <!-- ============ DATASETS ============ -->
+      <section id="datasets" class="view">
+        <div class="toolbar wrap ds-modebar">
+          <div class="view-tabs" id="ds-modes">
+            <button class="view-tab active" data-ds-mode="construct">How it's built</button>
+            <button class="view-tab" data-ds-mode="evolution">Evolution</button>
+            <button class="view-tab" data-ds-mode="realworld">Real-world fit</button>
+            <button class="view-tab" data-ds-mode="browser">Task Browser</button>
+          </div>
+          <label>Benchmark</label>
+          <select id="ds-benchmark">
+            <option value="breath">breath</option>
+            <option value="depth">depth</option>
+          </select>
+          <label>Domain</label>
+          <select id="ds-domain"></select>
+          <div class="ds-browser-tools">
+            <label>Task list</label>
+            <select id="ds-kind">
+              <option value="oracle">oracle (one per task)</option>
+              <option value="stage">all configs at the assigned time step</option>
+            </select>
+            <label>Time step</label>
+            <select id="ds-stage">
+              <option value="">all</option>
+            </select>
+            <input id="ds-filter" placeholder="filter by task id…" />
+          </div>
+        </div>
+
+        <div id="ds-construct" class="ds-construct">
+          <div class="empty">Loading construction view…</div>
+        </div>
+
+        <div id="ds-evolution" class="ds-evolution" style="display:none">
+          <div class="empty">Loading evolution view…</div>
+        </div>
+
+        <div id="ds-realworld" class="ds-realworld" style="display:none">
+          <div class="empty">Loading real-world comparison…</div>
+        </div>
+
+        <div id="ds-browser" class="split" style="display:none">
+          <aside class="left-panel">
+            <div id="ds-stages" class="stages-summary"></div>
+            <div class="task-list-header">
+              <strong id="ds-task-count">0 tasks</strong>
+            </div>
+            <ul id="ds-task-list" class="task-list"></ul>
+          </aside>
+          <section class="right-panel" id="ds-detail">
+            <div class="empty">Select a task on the left to inspect.</div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============ RESULTS ============ -->
+      <section id="results" class="view">
+        <div class="toolbar wrap rs-modebar">
+          <div class="view-tabs" id="rs-modes">
+            <button class="view-tab active" data-rs-mode="summary">CL Summary</button>
+            <button class="view-tab" data-rs-mode="browser">Browser</button>
+          </div>
+          <div class="rs-browser-tools" style="display:none">
+            <button id="rs-up" title="Up one level">↑</button>
+            <span id="rs-breadcrumb" class="breadcrumb"></span>
+            <a id="rs-dl-folder" class="rs-dl-folder" title="Download this folder as .zip" download href="#">↓ Download folder (.zip)</a>
+          </div>
+          <div class="rs-summary-tools">
+            <label>Run</label>
+            <select id="rs-sum-run"></select>
+            <label>Oracle run</label>
+            <select id="rs-sum-oracle"><option value="">(auto)</option></select>
+            <button id="rs-sum-refresh">Refresh</button>
+          </div>
+        </div>
+
+        <div id="rs-browser" class="split" style="display:none">
+          <aside class="left-panel">
+            <div class="left-section">
+              <h4>Directories</h4>
+              <ul id="rs-dirs" class="tree-list"></ul>
+            </div>
+            <div class="left-section">
+              <h4>Files</h4>
+              <ul id="rs-files" class="tree-list"></ul>
+            </div>
+          </aside>
+
+          <section class="right-panel" id="rs-detail">
+            <div class="empty">Pick a directory or file. The matrix view is automatically shown when a directory contains <code>report.json</code>.</div>
+          </section>
+        </div>
+
+        <div id="rs-summary" class="rs-summary">
+          <div class="empty">Loading continual-learning summary…</div>
+        </div>
+      </section>
+
+      <!-- ============ INSIGHTS ============ -->
+      <section id="insights" class="view">
+        <div class="toolbar wrap">
+          <label>Run</label>
+          <select id="ins-run"></select>
+          <label>View</label>
+          <select id="ins-view">
+            <option value="key_forgetting">1. Forgetting per system</option>
+            <option value="key_pair_deltas">2. Pair deltas (selection / usage / memory)</option>
+            <option value="key_token_cost">3. Token cost &amp; activity</option>
+            <option value="key_memory">4. Memory composition &amp; content</option>
+          </select>
+          <button id="ins-refresh">Refresh</button>
+        </div>
+        <section id="ins-detail" class="full-panel"></section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
