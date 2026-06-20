@@ -1,4 +1,4 @@
-// Evolve Observability — single-page frontend.
+// EvoHarnessBench — single-page frontend.
 //
 // Plain JS, no build step, no external deps. Everything is fetched from the
 // FastAPI backend at /api/...
@@ -164,17 +164,25 @@ const TAB_TO_PATH = {
   datasets: "/tools/benchmark",
   results: "/tools/results",
   insights: "/tools/insights",
+  "skill-datasets": "/skills/benchmark",
+  "skill-results": "/skills/results",
+  "agent-datasets": "/agents/benchmark",
+  "agents-results": "/agents/results",
 };
 const PATH_TO_TAB = (() => {
   const m = {};
   Object.entries(TAB_TO_PATH).forEach(([k, v]) => { m[v] = k; });
   m["/tools"] = "home";
+  m["/skills"] = "skill-results";
+  m["/agents"] = "agents-results";
   return m;
 })();
 
 // Which tabs belong to which URL space, used to show/hide the per-space
 // nav in the header.
 const TOOLS_TABS = new Set(["home", "datasets", "results", "insights"]);
+const SKILLS_TABS = new Set(["skill-datasets", "skill-results"]);
+const AGENTS_TABS = new Set(["agent-datasets", "agents-results"]);
 
 function tabFromLocation() {
   // Strip a trailing slash (except for the root) so /tools/insights/ also matches.
@@ -209,9 +217,27 @@ function showTab(name, opts) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === name));
   $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
 
-  // Hide the tools nav on the root landing; show it for any /tools/* view.
+  // Hide the whole nav on the root landing; otherwise show only the nav
+  // group for the URL space the active tab belongs to (Tools vs Skills).
   const tabs = document.getElementById("tabs");
   if (tabs) tabs.classList.toggle("tabs-hidden", name === "landing");
+  const inSkills = SKILLS_TABS.has(name);
+  const inAgents = AGENTS_TABS.has(name);
+  // The Benchmark detail views live under Dataset building, not the evaluation
+  // section: there we hide that axis's eval group and surface only the
+  // "← Back to dataset building" link (which axis is encoded per detail view).
+  const detailTrack = name === "datasets" ? "tools"
+    : name === "skill-datasets" ? "skills"
+    : name === "agent-datasets" ? "agents"
+    : null;
+  $$(".tab-group-tools").forEach((g) => g.classList.toggle("group-hidden", inSkills || inAgents || detailTrack !== null));
+  $$(".tab-group-skills").forEach((g) => g.classList.toggle("group-hidden", !inSkills || name === "skill-datasets"));
+  $$(".tab-group-agents").forEach((g) => g.classList.toggle("group-hidden", !inAgents || name === "agent-datasets"));
+  const backDb = document.getElementById("back-to-db");
+  if (backDb) {
+    backDb.classList.toggle("tab-back-hidden", detailTrack === null);
+    if (detailTrack) backDb.dataset.dbBack = detailTrack;
+  }
   // Also flag the body so we can swap the topbar background, etc.
   document.body.classList.toggle("at-landing", name === "landing");
 
@@ -243,6 +269,22 @@ function showTab(name, opts) {
     state.ins.loaded = true;
     initInsights();
   }
+  if (name === "skill-results" && !state.skrs.loaded) {
+    state.skrs.loaded = true;
+    if (state.skrs.mode === "summary") initSkillSummary();
+    else loadSkillResults("");
+  }
+  if (name === "skill-datasets") {
+    SKDS.onShow();
+  }
+  if (name === "agent-datasets") {
+    AGDS.onShow();
+  }
+  if (name === "agents-results" && !state.ar.loaded) {
+    state.ar.loaded = true;
+    if (state.ar.mode === "summary") initAgentSummary();
+    else loadAgentResults("");
+  }
 
   // Update the URL when this is a real navigation (not the popstate
   // handler re-asserting state, and not the initial load).
@@ -260,6 +302,15 @@ window.addEventListener("popstate", () => {
 });
 
 document.addEventListener("click", (e) => {
+  // "← Back to dataset building": return to the landing stepper's Dataset-
+  // building page (P2) and re-select the track the detail page belongs to.
+  const dbBack = e.target.closest("[data-db-back]");
+  if (dbBack) {
+    showTab("landing");
+    LP.go(2);
+    DB.select(dbBack.dataset.dbBack || "tools");
+    return;
+  }
   // Landing cards / topbar brand button both use data-tab.
   const tabTrigger = e.target.closest("[data-tab]");
   if (tabTrigger && tabTrigger.dataset.tab) {
@@ -753,6 +804,8 @@ const state = {
   home: { loaded: false },
   ds: { bench: null, domain: null, kind: "oracle", stage: "", filter: "", tasks: [], loaded: false, mode: "construct", evo: { data: null, loading: false }, rw: { data: null, loading: false, bench: null } },
   rs: { path: "", loaded: false, mode: "summary", sum: { run: null, oracleRun: "", data: null, loading: false } },
+  skrs: { path: "", loaded: false, mode: "summary", figs: null, _browserLoaded: false },
+  ar: { path: "", loaded: false, mode: "summary", figs: null, _browserLoaded: false },
   ins: { runs: [], run: null, domains: [], modes: [], loaded: false },
 };
 
@@ -838,6 +891,87 @@ async function loadEvolution() {
   }
 }
 
+// Shared "Dataset statistics" table for the Evolution tab of every axis
+// (tools / skills / agents). Reports the sample size with a per-version
+// breakdown — train (adapt) / test / total tasks and the version's share of
+// the whole sample — plus how the evolving resource pool grows. `opts`:
+//   resourceLabel: "skills" | "tools" | "agents"  (column wording)
+//   cumKey/newKey: per-stage field names for cumulative / newly-added counts
+// Stage fields tolerate both the evolution (num_adapt/num_test/num_new_tasks)
+// and summary (n_train/n_test/n_tasks) shapes.
+function datasetStatsTable(stages, opts) {
+  opts = opts || {};
+  const resLabel = opts.resourceLabel || "items";
+  const cumKey = opts.cumKey || null;
+  const newKey = opts.newKey || null;
+  const rows = (stages || []).map((s) => {
+    const train = s.num_adapt ?? s.n_train ?? 0;
+    const test = s.num_test ?? s.n_test ?? 0;
+    return {
+      name: s.name || `V${s.version ?? ""}`,
+      train,
+      test,
+      tasks: s.num_new_tasks ?? s.n_tasks ?? train + test,
+      nnew: newKey ? s[newKey] ?? null : null,
+      cum: cumKey ? s[cumKey] ?? null : null,
+    };
+  });
+  const tTrain = rows.reduce((a, r) => a + r.train, 0);
+  const tTest = rows.reduce((a, r) => a + r.test, 0);
+  const tTasks = rows.reduce((a, r) => a + r.tasks, 0);
+  const finalCum = rows.length ? rows[rows.length - 1].cum : null;
+  const n = (x) => (x == null ? "—" : Number(x).toLocaleString());
+  const share = (x) => (tTasks ? `${((x / tTasks) * 100).toFixed(1)}%` : "—");
+
+  const wrap = el("div", { class: "evo-chart card stats-card" });
+  wrap.appendChild(el("h3", { class: "evo-section-title" }, "Dataset statistics — sample size per version"));
+  wrap.appendChild(
+    el("p", { class: "muted stats-sub" },
+      `Sample size = ${n(tTasks)} tasks across ${rows.length} version${rows.length === 1 ? "" : "s"} ` +
+      `(${n(tTrain)} train · ${n(tTest)} test). Each version is a disjoint train (adapt) + test split.`)
+  );
+
+  const head = ["Version", "Train (adapt)", "Test", "Total tasks", "% of sample"];
+  if (cumKey) head.push(`+ new ${resLabel}`, `cumulative ${resLabel}`);
+  const table = el("table", { class: "stats-table" }, [
+    el("thead", {}, [
+      el("tr", {}, head.map((h, i) => el("th", { class: i ? "num" : "" }, h))),
+    ]),
+    el("tbody", {}, rows.map((r) => {
+      const cells = [
+        el("td", {}, r.name),
+        el("td", { class: "num" }, n(r.train)),
+        el("td", { class: "num" }, n(r.test)),
+        el("td", { class: "num num-strong" }, n(r.tasks)),
+        el("td", { class: "num muted" }, share(r.tasks)),
+      ];
+      if (cumKey) {
+        cells.push(el("td", { class: "num" }, r.nnew == null ? "—" : `+${r.nnew}`));
+        cells.push(el("td", { class: "num" }, n(r.cum)));
+      }
+      return el("tr", {}, cells);
+    })),
+    el("tfoot", {}, [
+      el("tr", { class: "stats-total" }, (() => {
+        const cells = [
+          el("td", {}, "Total"),
+          el("td", { class: "num" }, n(tTrain)),
+          el("td", { class: "num" }, n(tTest)),
+          el("td", { class: "num num-strong" }, n(tTasks)),
+          el("td", { class: "num muted" }, "100%"),
+        ];
+        if (cumKey) {
+          cells.push(el("td", { class: "num" }, "—"));
+          cells.push(el("td", { class: "num" }, n(finalCum)));
+        }
+        return cells;
+      })()),
+    ]),
+  ]);
+  wrap.appendChild(table);
+  return wrap;
+}
+
 function renderEvolution(root, data) {
   root.innerHTML = "";
 
@@ -852,6 +986,11 @@ function renderEvolution(root, data) {
       ),
     ])
   );
+
+  // -- Dataset-size statistics table (sample size + per-version splits)
+  root.appendChild(datasetStatsTable(data.stages, {
+    resourceLabel: "tools", cumKey: "num_cumulative_tools", newKey: "num_new_tools",
+  }));
 
   // -- Per-stage summary cards
   const cardsWrap = el("div", { class: "evo-cards" });
@@ -2696,6 +2835,385 @@ function setResultsMode(mode) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Skill-evolution results (evovle_skills/jobs): Summary (aggregate figures)
+// + Browser (lazy file tree over runs → domain → version → run_N → trials).
+// ---------------------------------------------------------------------------
+const SKILL_BROWSE_CFG = {
+  filesSel: "#skrs-files",
+  detailSel: "#skrs-detail",
+  apiBase: "/api/skill_results",
+};
+
+$("#skrs-modes").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-skrs-mode]");
+  if (!b) return;
+  setSkillResultsMode(b.dataset.skrsMode);
+});
+$("#skrs-up").addEventListener("click", () => {
+  if (!state.skrs.path) return;
+  const parts = state.skrs.path.split("/").filter(Boolean);
+  parts.pop();
+  loadSkillResults(parts.join("/"));
+});
+
+function setSkillResultsMode(mode) {
+  state.skrs.mode = mode;
+  $$("#skrs-modes [data-skrs-mode]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.skrsMode === mode)
+  );
+  $(".skrs-browser-tools").style.display = mode === "browser" ? "" : "none";
+  $("#skrs-browser").style.display = mode === "browser" ? "" : "none";
+  $("#skrs-summary").style.display = mode === "summary" ? "" : "none";
+  if (mode === "summary") initSkillSummary();
+  if (mode === "browser" && !state.skrs._browserLoaded) {
+    state.skrs._browserLoaded = true;
+    loadSkillResults("");
+  }
+}
+
+async function initSkillSummary() {
+  if (state.skrs.figs) return;
+  const root = $("#skrs-summary");
+  root.innerHTML = `<div class="empty">Loading skill-evolution summary…</div>`;
+  let data;
+  try {
+    data = await fetchJson("/api/skill_results/summary_figures");
+  } catch (e) {
+    root.innerHTML = `<div class="empty error">Failed to load summary: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  state.skrs.figs = data;
+  renderSkillSummary(root, data);
+}
+
+function renderSkillSummary(root, data) {
+  root.innerHTML = "";
+  root.appendChild(
+    el("p", { class: "muted" }, [
+      "Aggregate results for self-evolving skills across modes ",
+      el("strong", {}, "(no-skill / oracle-skill / evolved-skill)"),
+      " and domains. Figures are produced by the analysis pipeline under ",
+      el("code", {}, "evovle_skills/jobs/_analysis"),
+      ". Use the ",
+      el("strong", {}, "Browser"),
+      " tab to drill into individual runs → domain → version → trial.",
+    ])
+  );
+
+  const groups = (data && data.groups) || [];
+  if (!groups.length) {
+    root.appendChild(
+      el("div", { class: "empty" }, "No summary figures found yet under _analysis/.")
+    );
+    return;
+  }
+  for (const g of groups) {
+    root.appendChild(el("h3", { class: "skrs-fig-group" }, g.label));
+    const grid = el("div", { class: "skrs-figs" });
+    for (const f of g.figures) {
+      const rawUrl = `/api/skill_results/raw?path=${encodeURIComponent(f.path)}`;
+      const img = el("img", { src: rawUrl, alt: f.name, loading: "lazy" });
+      img.addEventListener("error", () => {
+        img.replaceWith(el("div", { class: "empty error" }, "Could not load image."));
+      });
+      grid.appendChild(
+        el("figure", { class: "skrs-fig" }, [
+          el("figcaption", {}, [
+            el("span", { style: "flex:1" }, f.name),
+            downloadLink(`${rawUrl}&download=1`, "Download figure", ""),
+          ]),
+          el("a", { href: rawUrl, target: "_blank", rel: "noopener" }, [img]),
+        ])
+      );
+    }
+    root.appendChild(grid);
+  }
+}
+
+async function loadSkillResults(path) {
+  state.skrs.path = path;
+  const url = new URL("/api/skill_results/tree", location.origin);
+  if (path) url.searchParams.set("path", path);
+  let data;
+  try {
+    data = await fetchJson(url);
+  } catch (e) {
+    toast(String(e), true);
+    return;
+  }
+  renderSkillBreadcrumb(path);
+  const dl = $("#skrs-dl-folder");
+  if (dl) {
+    dl.href = `/api/skill_results/download_zip?path=${encodeURIComponent(path || "")}`;
+    dl.title = path
+      ? `Download "${path}" as .zip`
+      : "Download the entire evovle_skills/jobs folder as .zip";
+  }
+  renderSkillTree(data);
+  const detail = $("#skrs-detail");
+  detail.innerHTML = "";
+  detail.appendChild(
+    el(
+      "div",
+      { class: "empty" },
+      path === ""
+        ? "Top of evovle_skills/jobs. Pick a run (mode) → domain → version → run → trial."
+        : "Open a file on the left."
+    )
+  );
+}
+
+function renderSkillBreadcrumb(path) {
+  const root = $("#skrs-breadcrumb");
+  root.innerHTML = "";
+  root.appendChild(
+    el("span", { class: "crumb", onclick: () => loadSkillResults("") }, "jobs")
+  );
+  if (!path) return;
+  const parts = path.split("/").filter(Boolean);
+  let acc = "";
+  for (const p of parts) {
+    acc = acc ? `${acc}/${p}` : p;
+    const partAcc = acc;
+    root.appendChild(document.createTextNode(" / "));
+    root.appendChild(el("span", { class: "crumb", onclick: () => loadSkillResults(partAcc) }, p));
+  }
+}
+
+function renderSkillTree(data) {
+  const dirs = $("#skrs-dirs");
+  const files = $("#skrs-files");
+  dirs.innerHTML = "";
+  files.innerHTML = "";
+
+  for (const d of data.dirs) {
+    const dirPath = state.skrs.path ? `${state.skrs.path}/${d}` : d;
+    dirs.appendChild(
+      el("li", { onclick: () => loadSkillResults(dirPath) }, [
+        el("span", { style: "flex:1" }, d),
+        downloadLink(
+          `/api/skill_results/download_zip?path=${encodeURIComponent(dirPath)}`,
+          "Download folder as .zip",
+          "zip"
+        ),
+      ])
+    );
+  }
+  for (const f of data.files) {
+    const path = state.skrs.path ? `${state.skrs.path}/${f.name}` : f.name;
+    const li = el(
+      "li",
+      {
+        class: "file",
+        onclick: () => openResultFile(path, f.name, SKILL_BROWSE_CFG),
+      },
+      [
+        el("span", { style: "flex:1" }, f.name),
+        el("span", { class: "muted", style: "font-size:11px;font-family:inherit;" }, fmtBytes(f.size)),
+        downloadLink(`/api/skill_results/raw?path=${encodeURIComponent(path)}&download=1`, "Download file", ""),
+      ]
+    );
+    li.dataset.path = path;
+    files.appendChild(li);
+  }
+  if (!data.dirs.length && !data.files.length) {
+    dirs.appendChild(el("li", { class: "muted" }, "(empty)"));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Agent-evolution results (evovle_agents/jobs): the AGENTS-axis evaluation
+// view — Summary (aggregate figures) + Browser (lazy file tree over settings
+// → domain → version → run_N → trials). Mirrors the skill-results view, reuses
+// the shared openResultFile() detail renderer.
+// ---------------------------------------------------------------------------
+const AGENT_BROWSE_CFG = {
+  filesSel: "#ar-files",
+  detailSel: "#ar-detail",
+  apiBase: "/api/agent_results",
+};
+
+$("#ar-modes").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-ar-mode]");
+  if (!b) return;
+  setAgentResultsMode(b.dataset.arMode);
+});
+$("#ar-up").addEventListener("click", () => {
+  if (!state.ar.path) return;
+  const parts = state.ar.path.split("/").filter(Boolean);
+  parts.pop();
+  loadAgentResults(parts.join("/"));
+});
+
+function setAgentResultsMode(mode) {
+  state.ar.mode = mode;
+  $$("#ar-modes [data-ar-mode]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.arMode === mode)
+  );
+  $(".ar-browser-tools").style.display = mode === "browser" ? "" : "none";
+  $("#ar-browser").style.display = mode === "browser" ? "" : "none";
+  $("#ar-summary").style.display = mode === "summary" ? "" : "none";
+  if (mode === "summary") initAgentSummary();
+  if (mode === "browser" && !state.ar._browserLoaded) {
+    state.ar._browserLoaded = true;
+    loadAgentResults("");
+  }
+}
+
+async function initAgentSummary() {
+  if (state.ar.figs) return;
+  const root = $("#ar-summary");
+  root.innerHTML = `<div class="empty">Loading agent-evolution summary…</div>`;
+  let data;
+  try {
+    data = await fetchJson("/api/agent_results/summary_figures");
+  } catch (e) {
+    root.innerHTML = `<div class="empty error">Failed to load summary: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  state.ar.figs = data;
+  renderAgentSummary(root, data);
+}
+
+function renderAgentSummary(root, data) {
+  root.innerHTML = "";
+  root.appendChild(
+    el("p", { class: "muted" }, [
+      "Aggregate evaluation results for the agent settings ",
+      el("strong", {}, "(oracle-agents / cumulative-agents)"),
+      " across domains. Figures are produced by the analysis pipeline under ",
+      el("code", {}, "evovle_agents/jobs/_analysis"),
+      ". Use the ",
+      el("strong", {}, "Browser"),
+      " tab to drill into individual runs → domain → version → trial. ",
+      "For how these agents are built, see ",
+      el("strong", {}, "Agents / Benchmark"),
+      ".",
+    ])
+  );
+
+  const groups = (data && data.groups) || [];
+  if (!groups.length) {
+    root.appendChild(
+      el("div", { class: "empty" }, "No summary figures found yet under _analysis/.")
+    );
+    return;
+  }
+  for (const g of groups) {
+    root.appendChild(el("h3", { class: "skrs-fig-group" }, g.label));
+    const grid = el("div", { class: "skrs-figs" });
+    for (const f of g.figures) {
+      const rawUrl = `/api/agent_results/raw?path=${encodeURIComponent(f.path)}`;
+      const img = el("img", { src: rawUrl, alt: f.name, loading: "lazy" });
+      img.addEventListener("error", () => {
+        img.replaceWith(el("div", { class: "empty error" }, "Could not load image."));
+      });
+      grid.appendChild(
+        el("figure", { class: "skrs-fig" }, [
+          el("figcaption", {}, [
+            el("span", { style: "flex:1" }, f.name),
+            downloadLink(`${rawUrl}&download=1`, "Download figure", ""),
+          ]),
+          el("a", { href: rawUrl, target: "_blank", rel: "noopener" }, [img]),
+        ])
+      );
+    }
+    root.appendChild(grid);
+  }
+}
+
+async function loadAgentResults(path) {
+  state.ar.path = path;
+  const url = new URL("/api/agent_results/tree", location.origin);
+  if (path) url.searchParams.set("path", path);
+  let data;
+  try {
+    data = await fetchJson(url);
+  } catch (e) {
+    toast(String(e), true);
+    return;
+  }
+  renderAgentBreadcrumb(path);
+  const dl = $("#ar-dl-folder");
+  if (dl) {
+    dl.href = `/api/agent_results/download_zip?path=${encodeURIComponent(path || "")}`;
+    dl.title = path
+      ? `Download "${path}" as .zip`
+      : "Download the entire evovle_agents/jobs folder as .zip";
+  }
+  renderAgentTree(data);
+  const detail = $("#ar-detail");
+  detail.innerHTML = "";
+  detail.appendChild(
+    el(
+      "div",
+      { class: "empty" },
+      path === ""
+        ? "Top of evovle_agents/jobs. Pick a setting (mode) → domain → version → run → trial."
+        : "Open a file on the left."
+    )
+  );
+}
+
+function renderAgentBreadcrumb(path) {
+  const root = $("#ar-breadcrumb");
+  root.innerHTML = "";
+  root.appendChild(
+    el("span", { class: "crumb", onclick: () => loadAgentResults("") }, "jobs")
+  );
+  if (!path) return;
+  const parts = path.split("/").filter(Boolean);
+  let acc = "";
+  for (const p of parts) {
+    acc = acc ? `${acc}/${p}` : p;
+    const partAcc = acc;
+    root.appendChild(document.createTextNode(" / "));
+    root.appendChild(el("span", { class: "crumb", onclick: () => loadAgentResults(partAcc) }, p));
+  }
+}
+
+function renderAgentTree(data) {
+  const dirs = $("#ar-dirs");
+  const files = $("#ar-files");
+  dirs.innerHTML = "";
+  files.innerHTML = "";
+
+  for (const d of data.dirs) {
+    const dirPath = state.ar.path ? `${state.ar.path}/${d}` : d;
+    dirs.appendChild(
+      el("li", { onclick: () => loadAgentResults(dirPath) }, [
+        el("span", { style: "flex:1" }, d),
+        downloadLink(
+          `/api/agent_results/download_zip?path=${encodeURIComponent(dirPath)}`,
+          "Download folder as .zip",
+          "zip"
+        ),
+      ])
+    );
+  }
+  for (const f of data.files) {
+    const path = state.ar.path ? `${state.ar.path}/${f.name}` : f.name;
+    const li = el(
+      "li",
+      {
+        class: "file",
+        onclick: () => openResultFile(path, f.name, AGENT_BROWSE_CFG),
+      },
+      [
+        el("span", { style: "flex:1" }, f.name),
+        el("span", { class: "muted", style: "font-size:11px;font-family:inherit;" }, fmtBytes(f.size)),
+        downloadLink(`/api/agent_results/raw?path=${encodeURIComponent(path)}&download=1`, "Download file", ""),
+      ]
+    );
+    li.dataset.path = path;
+    files.appendChild(li);
+  }
+  if (!data.dirs.length && !data.files.length) {
+    dirs.appendChild(el("li", { class: "muted" }, "(empty)"));
+  }
+}
+
 async function initCLSummary() {
   if (state.rs.sum._initialized) {
     if (!state.rs.sum.data) loadCLSummary(true);
@@ -3679,16 +4197,22 @@ function fileExt(name) {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
-async function openResultFile(path, name) {
-  $$("#rs-files li").forEach((li) => li.classList.toggle("active", li.dataset.path === path));
-  const detail = $("#rs-detail");
+async function openResultFile(path, name, cfg) {
+  // cfg lets the skills browser reuse this exact viewer with a different API
+  // base + DOM targets. Defaults to the tools (evolve_results) browser.
+  cfg = cfg || {};
+  const filesSel = cfg.filesSel || "#rs-files";
+  const detailSel = cfg.detailSel || "#rs-detail";
+  const apiBase = cfg.apiBase || "/api/results";
+  $$(`${filesSel} li`).forEach((li) => li.classList.toggle("active", li.dataset.path === path));
+  const detail = $(detailSel);
 
   // Image files: render inline instead of as raw bytes.
   if (IMAGE_EXTS.includes(fileExt(name))) {
     detail.innerHTML = "";
     detail.appendChild(el("h2", {}, name));
     detail.appendChild(el("div", { class: "muted" }, path));
-    const rawUrl = `/api/results/raw?path=${encodeURIComponent(path)}`;
+    const rawUrl = `${apiBase}/raw?path=${encodeURIComponent(path)}`;
     const img = el("img", { src: rawUrl, alt: name, loading: "lazy" });
     img.addEventListener("error", () => {
       img.replaceWith(el("div", { class: "empty error" }, "Could not load image."));
@@ -3704,7 +4228,7 @@ async function openResultFile(path, name) {
 
   detail.innerHTML = `<div class="empty">Loading ${escapeHtml(name)}…</div>`;
   try {
-    const data = await fetchJson(`/api/results/file?path=${encodeURIComponent(path)}`);
+    const data = await fetchJson(`${apiBase}/file?path=${encodeURIComponent(path)}`);
     detail.innerHTML = "";
     detail.appendChild(el("h2", {}, name));
     detail.appendChild(el("div", { class: "muted" }, path));
@@ -5348,6 +5872,2835 @@ $("#ins-run").addEventListener("change", onInsightsRunChange);
 $("#ins-view").addEventListener("change", () => renderInsightsView());
 $("#ins-refresh").addEventListener("click", () => renderInsightsView());
 
+// ===========================================================================
+// Build Inspector (Agents axis) — how the skill track becomes the agent track,
+// and what that guarantees. Backed by /api/build/*. Self-contained module;
+// reuses shared helpers ($, $$, el, escapeHtml, fetchJson, fmtPct).
+// ===========================================================================
+const BI = (() => {
+  const S = {
+    domain: null,
+    domains: [], booted: false, tab: null,
+    cov: null, covFilter: "all",
+  };
+  const TAB_BODY = {
+    "agents-overview": "#bi-overview",
+    "agents-skills": "#bi-skills",
+    "agents-agents": "#bi-agents",
+    "agents-scoping": "#bi-scoping",
+    "agents-coverage": "#bi-coverage",
+  };
+  const esc = escapeHtml;
+  const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+
+  const pill = (t, cls = "bi-dim") => `<span class="bi-pill ${cls}">${esc(t)}</span>`;
+  const chips = (items, cls) => (!items || !items.length)
+    ? `<span class="bi-faint">—</span>`
+    : `<div class="bi-chips">${items.map((t) => pill(t, cls)).join("")}</div>`;
+  function bar(label, value, max, cls, suffix = "") {
+    const w = max > 0 ? Math.max(2, (value / max) * 100) : 0;
+    return `<div class="bi-bar-row"><div class="bi-bl">${esc(label)}</div>` +
+      `<div class="bi-bar-track"><div class="bi-bar-fill ${cls}" style="width:${w}%">${value}${suffix}</div></div></div>`;
+  }
+  const stat = (num, lbl, cls = "") =>
+    `<div class="bi-card bi-stat ${cls}"><span class="bi-num">${num}</span><span class="bi-lbl">${esc(lbl)}</span></div>`;
+
+  function hlToml(src) {
+    return esc(src).split("\n").map((line) => {
+      if (/^\s*#/.test(line)) return `<span class="bi-c">${line}</span>`;
+      const m = line.match(/^(\[\[?[^\]]+\]?\])(.*)$/);
+      if (m) return `<span class="bi-h">${m[1]}</span>${m[2]}`;
+      return line
+        .replace(/^([A-Za-z0-9_]+)(\s*=\s*)/, '<span class="bi-k">$1</span>$2')
+        .replace(/(&quot;(?:[^&]|&(?!quot;))*&quot;)/g, '<span class="bi-s">$1</span>');
+    }).join("\n");
+  }
+
+  function controls() {
+    const dopts = S.domains.map((d) =>
+      `<option value="${d}" ${d === S.domain ? "selected" : ""}>${d}</option>`).join("");
+    return `<div class="bi-controls">
+      <label>Domain <select id="bi-domain">${dopts}</select></label>
+      <span class="bi-controls-note">capability partition · live from the real build code</span>
+    </div>`;
+  }
+
+  function body() { return $(TAB_BODY[S.tab]); }
+
+  async function onShow(tab) {
+    S.tab = tab;
+    if (!S.booted) {
+      const node = body();
+      if (node) node.innerHTML = `<div class="empty">Loading build inspector…</div>`;
+      try {
+        const cfg = await fetchJson("/api/build/domains");
+        S.domains = cfg.domains || [];
+        S.domain = S.domains[0];
+        S.booted = true;
+      } catch (e) {
+        if (node) node.innerHTML = `<div class="bi-error">Could not load build APIs: ${esc(e.message)}</div>`;
+        return;
+      }
+    }
+    render();
+  }
+
+  async function render() {
+    const node = body();
+    if (!node) return;
+    node.innerHTML = controls() + `<div class="empty">Loading…</div>`;
+    try {
+      let html;
+      if (S.tab === "agents-overview") html = await renderOverview();
+      else if (S.tab === "agents-skills") html = await renderSkills();
+      else if (S.tab === "agents-agents") html = await renderAgents();
+      else if (S.tab === "agents-scoping") html = await renderScoping();
+      else if (S.tab === "agents-coverage") html = await renderCoverage();
+      node.innerHTML = controls() + html;
+    } catch (e) {
+      node.innerHTML = controls() + `<div class="bi-error">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ---- views -------------------------------------------------------------
+  async function renderOverview() {
+    const d = await fetchJson(`/api/build/${S.domain}/overview`);
+    const flow = `<div class="bi-flow">
+      <div class="bi-step bi-skillc"><h4>1 · Dataset rows</h4><p>Each task lists its
+        ${pill("oracle_skills", "bi-skill")} and gold ${pill("selected_tools", "bi-tool")}.</p></div>
+      <div class="bi-arrow">→</div>
+      <div class="bi-step bi-skillc"><h4>2 · Skill library</h4><p>One <code>SKILL.md</code> per oracle
+        skill, pooled <b>per-version</b> &amp; <b>cumulatively</b>.</p></div>
+      <div class="bi-arrow">→</div>
+      <div class="bi-step bi-agentc"><h4>3 · Capability partition</h4><p>The tool universe is split into
+        disjoint, COMPLETE capability bundles (deterministic, no LLM).</p></div>
+      <div class="bi-arrow">→</div>
+      <div class="bi-step bi-toolc"><h4>4 · Capability agents</h4><p>Each capability becomes one Codex
+        subagent owning its whole tool bundle.</p></div>
+    </div>`;
+    const maxPool = Math.max(...d.versions.map((v) => v.n_cumulative_pool), 1);
+    const rows = d.versions.map((v) => `<tr>
+      <td><b>v${v.version}</b></td>
+      <td class="bi-num">${v.n_train}</td><td class="bi-num">${v.n_test}</td>
+      <td class="bi-num">${v.n_tasks}</td>
+      <td>${bar(`v${v.version}`, v.n_version_pool, maxPool, "bi-accent")}</td>
+      <td>${bar(`v${v.version}`, v.n_cumulative_pool, maxPool, "bi-accent")}</td>
+      <td class="bi-num">${v.n_distractors ? pill(v.n_distractors, "bi-forced") : "0"}</td>
+    </tr>`).join("");
+    return `<div class="bi-note">The <b>skill track</b> (<code>evovle_skills</code>) and
+      <b>agent track</b> (<code>evovle_agents</code>) share the same dataset &amp; oracle library;
+      the agent track materializes each skill 1:1 as a subagent. Everything here is computed live
+      from the build code — exactly what a trial would mount.</div>
+      ${flow}
+      <div class="bi-cards">
+        ${stat(d.n_versions, "versions")}
+        ${stat(d.n_skills_total, "oracle skills = agents", "bi-agentnum")}
+        ${stat(d.versions.reduce((a, v) => a + v.n_tasks, 0), "total tasks")}
+        ${stat(d.versions.at(-1)?.n_cumulative_pool ?? 0, "final pool size", "bi-accentnum")}
+      </div>
+      <h3 class="bi-h3">Evolving resource — per-version vs cumulative pool</h3>
+      <p class="bi-tip">A skill/agent enters the pool at the version its tasks first need it; the
+        cumulative pool only grows. Agents beyond a version's own set are ${pill("distractors", "bi-forced")}.</p>
+      <table class="bi-grid"><thead><tr><th>Version</th><th class="bi-num">Train</th>
+        <th class="bi-num">Test</th><th class="bi-num">Tasks</th><th>Per-version pool</th>
+        <th>Cumulative pool</th><th class="bi-num">Distractors</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+  }
+
+  async function renderSkills() {
+    const d = await fetchJson(`/api/build/${S.domain}/skills`);
+    const rows = d.skills.map((s, i) => `<tr class="bi-click" data-bi-skill="${esc(s.slug)}">
+      <td class="bi-faint bi-num">${i + 1}</td>
+      <td><code>${esc(s.slug)}</code></td>
+      <td>${pill(s.agent_name, "bi-agent")}</td>
+      <td class="bi-muted">${esc((s.description || "").slice(0, 90))}${(s.description || "").length > 90 ? "…" : ""}</td>
+      <td class="bi-num">${s.references.length}</td><td class="bi-num">${s.n_tasks}</td>
+    </tr>`).join("");
+    return `<div class="bi-note"><b>Can an agent hold more than one skill?</b> No — strictly 1:1.
+      All ${d.n_skills} oracle skills below; each maps to exactly one agent. Click a row for the
+      <code>SKILL.md</code> body + references.</div>
+      <table class="bi-grid"><thead><tr><th class="bi-num">#</th><th>Skill slug</th><th>→ Agent</th>
+        <th>Description (routing-hint source)</th><th class="bi-num">refs</th>
+        <th class="bi-num">tasks</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  async function renderAgents() {
+    const d = await fetchJson(`/api/build/${S.domain}/agents`);
+    const maxTools = Math.max(...d.agents.map((a) => a.n_tools), 1);
+    const rows = d.agents.map((a) => `<tr class="bi-click" data-bi-agent="${esc(a.source_slug)}">
+      <td>${pill(a.agent_name, "bi-agent")}</td>
+      <td><code>${esc(a.source_slug)}</code></td>
+      <td style="min-width:220px">${bar(a.agent_name, a.n_tools, maxTools, "bi-accent")}</td>
+    </tr>`).join("");
+    return `<div class="bi-note"><b>${d.n_agents} capability agents</b>
+      (${d.one_to_one ? pill("disjoint", "bi-solo") : pill("OVERLAP", "bi-hole")}). Each agent owns a
+      COMPLETE, disjoint tool bundle (deterministic, no LLM). Click an agent for its generated Codex
+      TOML.</div>
+      <table class="bi-grid"><thead><tr><th>Agent</th><th>Capability</th>
+        <th>Tool bundle</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  async function renderScoping() {
+    const d = await fetchJson(`/api/build/${S.domain}/scoping`);
+    const maxTools = Math.max(...d.per_agent.map((a) => a.n_tools), 1);
+    const agentBars = d.per_agent.map((a) => bar(a.agent_name, a.n_tools, maxTools, "bi-accent")).join("");
+    const sharedEntries = Object.entries(d.shared_tools).sort((a, b) => b[1].length - a[1].length);
+    const sharedRows = sharedEntries.slice(0, 250).map(([t, agents]) =>
+      `<tr><td><code>${esc(t)}</code></td><td class="bi-num">${agents.length}</td>
+        <td>${chips(agents, "bi-agent")}</td></tr>`).join("");
+    return `<div class="bi-note"><b>Capability partition:</b> every tool is owned by exactly one
+      capability agent, so the per-agent bundles are <b>complete</b> (each agent can finish its
+      capability) and <b>disjoint</b> (no tool shared across agents).</div>
+      <div class="bi-cards">
+        ${stat(d.n_agents, "agents")}
+        ${stat(d.n_distinct_tools, "distinct tools")}
+        ${stat(d.n_shared_tools, "shared across ≥2 agents", d.n_shared_tools ? "bi-warnnum" : "bi-solonum")}
+        ${stat(pct(d.shared_fraction), "tool overlap", d.n_shared_tools ? "bi-warnnum" : "bi-solonum")}
+      </div>
+      <p class="bi-tip">Disjoint scopes (0% overlap) are <b>why</b> a task whose gold tools span several
+        capabilities cannot be solved by a single agent → forced multi-agent.</p>
+      <div class="bi-split2">
+        <div><h3 class="bi-h3">Tools per agent</h3>${agentBars}</div>
+        <div><h3 class="bi-h3">Shared tools (in ≥2 agent scopes)</h3>
+          <div class="bi-tablewrap"><table class="bi-grid"><thead><tr><th>Tool</th>
+            <th class="bi-num"># agents</th><th>Agents</th></tr></thead>
+            <tbody>${sharedRows || `<tr><td colspan="3" class="bi-faint">none</td></tr>`}</tbody>
+          </table></div></div>
+      </div>`;
+  }
+
+  async function renderCoverage() {
+    const d = await fetchJson(`/api/build/${S.domain}/coverage`);
+    S.cov = d;
+    const dist = d.distribution;
+    const maxc = Math.max(...Object.values(dist), 1);
+    const distBars = Object.keys(dist).sort((a, b) => +a - +b).map((k) =>
+      bar(`${k} agent${k === "1" ? "" : "s"}`, dist[k], maxc, k === "1" ? "bi-solo" : "bi-forced",
+        ` task${dist[k] === 1 ? "" : "s"}`)).join("");
+    return `<div class="bi-note"><b>Does a task need &gt;1 agent?</b> A task is
+      ${pill("forced-multi", "bi-forced")} only if <b>no single</b> oracle agent's scope covers all its
+      gold tools (min set-cover ≥ 2). A ${pill("hole", "bi-hole")} means the oracle agents can't jointly
+      cover it.</div>
+      <div class="bi-cards">
+        ${stat(d.n_tasks, "tasks")}
+        ${stat(d.solvable_by_one, "solvable by ONE agent", "bi-solonum")}
+        ${stat(d.forced_multi_agent, "forced multi-agent", "bi-warnnum")}
+        ${stat(pct(d.forced_fraction), "forced fraction", "bi-warnnum")}
+        ${stat(d.coverage_holes, "coverage holes", d.coverage_holes ? "bi-holenum" : "bi-solonum")}
+      </div>
+      <div class="bi-split2">
+        <div><h3 class="bi-h3">Min agents required (distribution)</h3>${distBars}
+          <p class="bi-tip">${d.n_single_oracle_skill_tasks} tasks need a single capability agent
+            (solo-solvable); the rest span ≥2 capabilities → forced multi-agent.</p></div>
+        <div><h3 class="bi-h3">What the capability partition guarantees</h3>
+          <ul class="bi-muted bi-ul">
+          <li><b>0 coverage holes</b> — the partition is complete, so every task's gold tools are owned
+            by some agent.</li>
+          <li><b>Complete agents</b> — each agent owns its capability's WHOLE tool bundle, so it can
+            always finish its part.</li>
+          <li>Gold tools are <b>split across disjoint specialists</b>, so a task spanning ≥2 capabilities
+            is forced multi-agent — no single agent can cover it.</li>
+          </ul></div>
+      </div>
+      <h3 class="bi-h3">Per-task verdicts</h3>
+      <div class="bi-search"><select id="bi-cov-filter">
+        <option value="all">All tasks</option>
+        <option value="forced">Forced multi-agent</option>
+        <option value="solo">Solo-solvable</option>
+        <option value="holes">Coverage holes</option>
+      </select></div>
+      <div class="bi-tablewrap"><table class="bi-grid" id="bi-cov-table">${covTableInner()}</table></div>`;
+  }
+
+  function covTableInner() {
+    const d = S.cov;
+    if (!d) return "";
+    let tasks = d.per_task;
+    if (S.covFilter === "forced") tasks = tasks.filter((t) => t.min_agents && t.min_agents >= 2);
+    else if (S.covFilter === "solo") tasks = tasks.filter((t) => t.min_agents === 1);
+    else if (S.covFilter === "holes") tasks = tasks.filter((t) => !t.coverable);
+    const rows = tasks.slice(0, 600).map((t) => {
+      const verdict = !t.coverable ? pill("hole", "bi-hole")
+        : t.min_agents === 1 ? pill("solo", "bi-solo") : pill(`needs ${t.min_agents}`, "bi-forced");
+      return `<tr class="bi-click" data-bi-task="${esc(t.task_id)}">
+        <td><code>${esc(t.task_id.slice(0, 30))}…</code></td>
+        <td class="bi-num">v${t.version}</td><td class="bi-num">${t.n_oracle_skills}</td>
+        <td class="bi-num">${t.n_gold_tools}</td><td>${verdict}</td>
+        <td>${chips(t.oracle_agents, "bi-agent")}</td></tr>`;
+    }).join("");
+    return `<thead><tr><th>Task</th><th class="bi-num">ver</th><th class="bi-num">caps</th>
+      <th class="bi-num">gold</th><th>verdict</th><th>Capability agents</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" class="bi-faint">none</td></tr>`}</tbody>`;
+  }
+
+  // ---- drawers -----------------------------------------------------------
+  function openDrawer(html) {
+    $("#bi-drawer-body").innerHTML = html;
+    $("#bi-drawer").classList.remove("hidden");
+  }
+  function closeDrawer() { $("#bi-drawer").classList.add("hidden"); }
+
+  async function openSkill(slug) {
+    const d = await fetchJson(`/api/build/${S.domain}/skills/${encodeURIComponent(slug)}`);
+    openDrawer(`<h2 class="bi-dh"><code>${esc(d.slug)}</code></h2>
+      <div class="bi-kv">
+        <div class="bi-key">Becomes agent</div><div>${pill(d.agent_name, "bi-agent")}</div>
+        <div class="bi-key">frontmatter name</div><div><code>${esc(d.frontmatter.name || "—")}</code></div>
+        <div class="bi-key">In versions</div><div>${d.in_versions.map((v) => pill("v" + v)).join(" ") || "—"}</div>
+        <div class="bi-key">references/</div><div>${chips(d.references, "bi-dim")}</div>
+      </div>
+      <h3 class="bi-h3">Description (→ agent routing hint)</h3>
+      <div class="bi-note">${esc(d.frontmatter.description || "—")}</div>
+      <h3 class="bi-h3">SKILL.md body <span class="bi-faint">(referenced, never inlined)</span></h3>
+      <pre class="bi-code">${esc(d.body || "(empty)")}</pre>`);
+  }
+
+  async function openAgent(slug) {
+    const d = await fetchJson(`/api/build/${S.domain}/agents/${encodeURIComponent(slug)}`);
+    openDrawer(`<h2 class="bi-dh">${pill(d.agent_name, "bi-agent")}</h2>
+      <div class="bi-kv">
+        <div class="bi-key">Capability</div><div><code>${esc(d.source_slug)}</code></div>
+        <div class="bi-key">Tool bundle</div><div>${d.n_tools} tools (complete &amp; disjoint)</div>
+        <div class="bi-key">In versions</div><div>${d.in_versions.map((v) => pill("v" + v)).join(" ") || "—"}</div>
+        <div class="bi-key">Used by</div><div>${d.n_tasks} tasks</div>
+      </div>
+      <h3 class="bi-h3">Oracle tool bundle</h3>${chips(d.tools, "bi-tool")}
+      <h3 class="bi-h3">Generated Codex agent (TOML)</h3>
+      <pre class="bi-code">${hlToml(d.toml)}</pre>`);
+  }
+
+  async function openTask(taskId) {
+    const d = await fetchJson(`/api/build/${S.domain}/task/${encodeURIComponent(taskId)}`);
+    const verdict = d.verdict === "forced_multi" ? pill(`forced — needs ${d.min_agents}`, "bi-forced")
+      : d.verdict === "solo" ? pill("solo-solvable", "bi-solo") : pill("uncoverable", "bi-hole");
+    const agentRows = d.agents.map((a) => `<tr>
+      <td>${pill(a.agent_name, "bi-agent")}</td><td class="bi-num">${a.scope_size}</td>
+      <td class="bi-num">${a.n_covers}/${d.gold_tools.length}${a.covers_all ? " " + pill("all", "bi-solo") : ""}</td>
+      <td>${(a.attributed.length ? chips(a.attributed, "bi-tool") : `<span class="bi-faint">—</span>`)}</td>
+    </tr>`).join("");
+    openDrawer(`<h2 class="bi-dh">Task ${verdict}</h2>
+      <div class="bi-kv">
+        <div class="bi-key">task_id</div><div><code>${esc(d.task_id)}</code></div>
+        <div class="bi-key">version / split</div><div>v${d.version} · ${esc(d.split)}</div>
+        <div class="bi-key">Oracle agents</div><div>${chips(d.oracle_agents, "bi-agent")}</div>
+        <div class="bi-key">Gold tools (${d.gold_tools.length})</div><div>${chips(d.gold_tools, "bi-tool")}</div>
+        <div class="bi-key">Min set-cover</div><div>${d.min_agents == null ? pill("uncoverable", "bi-hole")
+          : `${d.min_agents} agent(s): ${chips(d.cover_set, "bi-agent")}`}</div>
+      </div>
+      <h3 class="bi-h3">Per-agent coverage of this task's gold tools</h3>
+      <p class="bi-tip"><b>covers</b> = gold tools in the agent's capability bundle.
+        <b>attributed</b> = the gold tools this capability owns (disjoint, so covers == attributed).</p>
+      <table class="bi-grid"><thead><tr><th>Agent</th><th class="bi-num">scope</th>
+        <th class="bi-num">covers</th><th>attributed (this task)</th></tr></thead>
+        <tbody>${agentRows}</tbody></table>
+      <h3 class="bi-h3">User prompt</h3>
+      <pre class="bi-code">${esc((d.user_prompt || "").slice(0, 1500))}</pre>`);
+  }
+
+  // ---- delegated events --------------------------------------------------
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("[data-bi-close]")) { closeDrawer(); return; }
+    const sk = e.target.closest("[data-bi-skill]");
+    if (sk) { openSkill(sk.dataset.biSkill); return; }
+    const ag = e.target.closest("[data-bi-agent]");
+    if (ag) { openAgent(ag.dataset.biAgent); return; }
+    const tk = e.target.closest("[data-bi-task]");
+    if (tk) { openTask(tk.dataset.biTask); return; }
+  });
+  document.addEventListener("change", (e) => {
+    if (e.target.id === "bi-domain") { S.domain = e.target.value; render(); }
+    else if (e.target.id === "bi-cov-filter") {
+      S.covFilter = e.target.value;
+      const t = $("#bi-cov-table");
+      if (t) t.innerHTML = covTableInner();
+    }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+
+  // Render a single inspector view (scoping/coverage) into an arbitrary
+  // container, driven by an EXTERNAL domain selector (the Agents / Benchmark
+  // mode bar). Self-boots so it works before onShow ever runs; the delegated
+  // click/drawer/cov-filter listeners above keep working since they read S.
+  async function renderInto(tab, container, domain) {
+    if (!container) return;
+    if (!S.booted) {
+      container.innerHTML = `<div class="empty">Loading…</div>`;
+      try {
+        const cfg = await fetchJson("/api/build/domains");
+        S.domains = cfg.domains || [];
+        S.booted = true;
+      } catch (e) {
+        container.innerHTML = `<div class="bi-error">Could not load build APIs: ${esc(e.message)}</div>`;
+        return;
+      }
+    }
+    S.domain = domain;
+    S.tab = tab;
+    container.innerHTML = `<div class="empty">Loading…</div>`;
+    try {
+      const html = tab === "agents-scoping" ? await renderScoping() : await renderCoverage();
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div class="bi-error">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  return { onShow, renderInto };
+})();
+
+// ---------------------------------------------------------------------------
+// SKDS — Skills / Benchmark (dataset-building) explorer
+// ---------------------------------------------------------------------------
+// The SKILLS-axis analogue of the Tools "Benchmark" (#datasets) view: the same
+// four sub-tabs — How it's built / Evolution / Real-world fit / Task Browser —
+// but the evolving resource is the LATENT oracle SKILL library (S₁ ⊂ S₂ ⊂ …),
+// not a tool catalog. Data comes from /api/skill-datasets/* (build_engine over
+// the real evovle_skills rows + _oracle manifest). Reuses the ds-/evo-/rw-
+// styles and the shared el()/chart helpers so it matches the Tools view 1:1.
+const SKDS = (() => {
+  const st = {
+    mounted: false,
+    domain: null,
+    mode: "construct",
+    sum: { data: null },
+    evo: { data: null, loading: false },
+    rw: { data: null, loading: false },
+    tasks: [],
+  };
+  // Color a skill by the version that first introduces it (0-based).
+  const VCOLORS = ["#2563eb", "#0ea5e9", "#6366f1", "#d97706", "#dc2626", "#059669"];
+  const vcolor = (i) => VCOLORS[i % VCOLORS.length];
+
+  // ===== lifecycle =========================================================
+  async function onShow() {
+    if (st.mounted) return;
+    st.mounted = true;
+    wire();
+    try {
+      const d = await fetchJson("/api/skill-datasets");
+      const sel = $("#skds-domain");
+      sel.innerHTML = (d.domains || [])
+        .map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`)
+        .join("");
+      st.domain = (d.domains || [])[0] || null;
+      if (st.domain) sel.value = st.domain;
+    } catch (e) {
+      $("#skds-construct").innerHTML =
+        `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+      return;
+    }
+    applyModeVisibility(st.mode);
+    await onDomainChange();
+  }
+
+  function wire() {
+    $("#skds-modes").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-skds-mode]");
+      if (b) setMode(b.dataset.skdsMode);
+    });
+    $("#skds-domain").addEventListener("change", onDomainChange);
+    $("#skds-version").addEventListener("change", reloadTaskList);
+    $("#skds-split").addEventListener("change", reloadTaskList);
+    $("#skds-filter").addEventListener("input", renderTaskList);
+  }
+
+  function applyModeVisibility(mode) {
+    $$("#skds-modes [data-skds-mode]").forEach((b) =>
+      b.classList.toggle("active", b.dataset.skdsMode === mode));
+    $(".skds-browser-tools").style.display = mode === "browser" ? "" : "none";
+    $("#skds-browser").style.display = mode === "browser" ? "" : "none";
+    $("#skds-evolution").style.display = mode === "evolution" ? "" : "none";
+    $("#skds-construct").style.display = mode === "construct" ? "" : "none";
+    const rw = $("#skds-realworld");
+    if (rw) rw.style.display = mode === "realworld" ? "" : "none";
+  }
+
+  // Called on user tab clicks (data for the initial domain is already loaded
+  // by onDomainChange, so the evo cache is warm by the time tabs are used).
+  function setMode(mode) {
+    st.mode = mode;
+    applyModeVisibility(mode);
+    if (mode === "construct" || mode === "evolution") {
+      if (!st.evo.data) loadEvolution();
+      else if (mode === "construct") renderConstruction($("#skds-construct"), st.evo.data, st.sum.data);
+      else renderEvolution($("#skds-evolution"), st.evo.data);
+    } else if (mode === "realworld") {
+      loadRealworld();
+    }
+  }
+
+  // ===== data loads ========================================================
+  async function onDomainChange() {
+    st.domain = $("#skds-domain").value;
+    st.evo.data = null;
+    try {
+      st.sum.data = await fetchJson(`/api/skill-datasets/${st.domain}/summary`);
+    } catch (e) {
+      st.sum.data = null;
+    }
+    populateVersions();
+    renderStages();
+    await reloadTaskList();
+    if (st.mode === "construct" || st.mode === "evolution") await loadEvolution();
+    else if (st.mode === "realworld") await loadRealworld();
+  }
+
+  function populateVersions() {
+    const sel = $("#skds-version");
+    const stages = st.sum.data?.stages || [];
+    sel.innerHTML = `<option value="">all</option>` +
+      stages.map((s) => `<option value="${s.version}">V${s.version}</option>`).join("");
+  }
+
+  async function loadEvolution() {
+    if (!st.domain || st.evo.loading) return;
+    if (st.evo.data) {
+      renderConstruction($("#skds-construct"), st.evo.data, st.sum.data);
+      renderEvolution($("#skds-evolution"), st.evo.data);
+      return;
+    }
+    st.evo.loading = true;
+    try {
+      const data = await fetchJson(`/api/skill-datasets/${st.domain}/evolution`);
+      st.evo.data = data;
+      renderConstruction($("#skds-construct"), data, st.sum.data);
+      renderEvolution($("#skds-evolution"), data);
+    } catch (e) {
+      const msg = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+      $("#skds-evolution").innerHTML = msg;
+      $("#skds-construct").innerHTML = msg;
+    } finally {
+      st.evo.loading = false;
+    }
+  }
+
+  async function loadRealworld() {
+    const root = $("#skds-realworld");
+    if (st.rw.data) { renderRealworld(root, st.rw.data); return; }
+    if (st.rw.loading) return;
+    st.rw.loading = true;
+    root.innerHTML = `<div class="empty">Loading real-world comparison…</div>`;
+    try {
+      const data = await fetchJson("/api/skill-datasets/realworld_comparison");
+      st.rw.data = data;
+      renderRealworld(root, data);
+    } catch (e) {
+      root.innerHTML = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+    } finally {
+      st.rw.loading = false;
+    }
+  }
+
+  async function reloadTaskList() {
+    if (!st.domain) return;
+    const version = $("#skds-version").value;
+    const split = $("#skds-split").value;
+    const url = new URL(`/api/skill-datasets/${st.domain}/tasks`, location.origin);
+    if (version !== "") url.searchParams.set("version", version);
+    url.searchParams.set("split", split || "all");
+    try {
+      const data = await fetchJson(url);
+      st.tasks = data.tasks || [];
+    } catch (e) {
+      st.tasks = [];
+    }
+    renderTaskList();
+  }
+
+  // ===== CONSTRUCTION ("How it's built") ===================================
+  function renderConstruction(root, evo, sum) {
+    root.innerHTML = "";
+    const stages = evo.stages || [];
+
+    root.appendChild(el("div", { class: "evo-header" }, [
+      el("h2", { class: "evo-title" }, `How the skill benchmark is built · ${evo.domain}`),
+      el("p", { class: "muted" },
+        `The policy of a domain is split into a hidden library of oracle SKILLS, ordered by task ` +
+        `coverage and grown into nested versions S₁ ⊂ S₂ ⊂ … . The skills are never shown — the agent ` +
+        `must author its own — while oracle tools are handed over so we isolate the skill itself. Below, the ` +
+        `five construction steps on the current domain (${evo.n_skills_total} skills, ${stages.length} versions, ${evo.total_tasks ?? "?"} tasks).`),
+    ]));
+
+    root.appendChild(skdsStep1());
+    root.appendChild(skdsStep2(evo, sum));
+    root.appendChild(skdsStep3(stages));
+    root.appendChild(skdsStep4(stages));
+    root.appendChild(skdsStep5(sum));
+  }
+
+  // Step 1 — anatomy of a skill sample: X → hidden skills → oracle tools → Y
+  function skdsStep1() {
+    const W = 720, H = 210;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("class", "construct-svg");
+    svg.style.width = "100%"; svg.style.maxWidth = `${W}px`; svg.style.height = "auto";
+    const blue = "#2563eb", purple = "#7c3aed", gold = "#ca8a04", green = "#16a34a", sub = "#64748b", txt = "#0f172a";
+    const boxes = [
+      { t: "Xᵢ", s: "user task", d: '"Register an HR case for the on-site mandate"', c: blue },
+      { t: "Sᵢ", s: "latent oracle skills", d: "{ registering-an-hr-case }  ·  hidden", c: purple },
+      { t: "Tᵢ", s: "oracle tools (given)", d: "{ get_user, create_new_hr_case, … }", c: gold },
+      { t: "Yᵢ", s: "expected outcome", d: "verifier passes (case row created)", c: green },
+    ];
+    const boxW = 158, boxH = 116, gapX = (W - boxW * 4) / 5;
+    boxes.forEach((b, i) => {
+      const x = gapX + i * (boxW + gapX), y = 26;
+      svg.appendChild(svgRect(x, y, boxW, boxH, "#f8fafc", b.c, 8));
+      svg.appendChild(svgText(x + boxW / 2, y + 26, b.t, b.c, "middle", 20, 800));
+      svg.appendChild(svgText(x + boxW / 2, y + 46, b.s, sub, "middle", 10, 600));
+      const d = b.d;
+      svg.appendChild(svgText(x + boxW / 2, y + 72, d.slice(0, 24), txt, "middle", 9));
+      if (d.length > 24) svg.appendChild(svgText(x + boxW / 2, y + 86, d.slice(24, 48), txt, "middle", 9));
+      if (d.length > 48) svg.appendChild(svgText(x + boxW / 2, y + 100, d.slice(48, 72), txt, "middle", 9));
+      if (i < boxes.length - 1) {
+        const ax = x + boxW + 3, ex = x + boxW + gapX - 3, ay = y + boxH / 2;
+        const ln = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        ln.setAttribute("x1", ax); ln.setAttribute("y1", ay); ln.setAttribute("x2", ex); ln.setAttribute("y2", ay);
+        ln.setAttribute("stroke", sub); ln.setAttribute("stroke-width", 1.5);
+        ln.setAttribute("marker-end", "url(#skds-arrow)");
+        svg.appendChild(ln);
+        svg.appendChild(svgText((ax + ex) / 2, ay - 7, ["needs", "uses", "yields"][i], sub, "middle", 9, 600));
+      }
+    });
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    defs.innerHTML = `<marker id="skds-arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#64748b"/></marker>`;
+    svg.insertBefore(defs, svg.firstChild);
+    svg.appendChild(svgText(W / 2, H - 10,
+      "Each task carries its prompt Xᵢ, the oracle skills Sᵢ needed (latent), the oracle tools Tᵢ (provided), and a verifier outcome Yᵢ.",
+      sub, "middle", 11, 500));
+    return constructStepCard(1, "Each sample = (Xᵢ, Sᵢ, Tᵢ, Yᵢ)",
+      "The atomic unit is a tuple of the user prompt, the ground-truth oracle SKILLS it requires (held out of the system prompt), the oracle TOOLS (handed over so tool-discovery is not the bottleneck), and a verifier-checkable outcome.",
+      svg);
+  }
+
+  // Step 2 — collect & rank skills by task coverage, colored by intro version.
+  function skdsStep2(evo, sum) {
+    const counts = (sum && sum.task_count_per_skill) || {};
+    const skills = (evo.skill_timeline || []).map((r) => ({
+      slug: r.skill, name: r.name || r.skill, intro: r.intro_stage,
+      count: counts[r.skill] || 0,
+    })).sort((a, b) => b.count - a.count || a.slug.localeCompare(b.slug));
+    const maxC = Math.max(1, ...skills.map((s) => s.count));
+    const rowH = 22, padL = 250, padR = 48, W = 720, H = Math.max(60, skills.length * rowH + 16);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("class", "construct-svg");
+    svg.style.width = "100%"; svg.style.maxWidth = `${W}px`; svg.style.height = "auto";
+    skills.forEach((s, i) => {
+      const y = 8 + i * rowH;
+      const bw = ((W - padL - padR) * s.count) / maxC;
+      const c = vcolor(s.intro);
+      svg.appendChild(svgText(padL - 8, y + rowH / 2 + 3,
+        (s.name.length > 38 ? s.name.slice(0, 37) + "…" : s.name), "#334155", "end", 10, 600));
+      svg.appendChild(svgRect(padL, y + 3, Math.max(2, bw), rowH - 8, c, c, 3));
+      svg.appendChild(svgText(padL + Math.max(2, bw) + 5, y + rowH / 2 + 3, `${s.count}`, "#475569", "start", 10, 700));
+    });
+    const wrap = el("div", {});
+    wrap.appendChild(svg);
+    const legend = el("div", { class: "evo-legend" });
+    (evo.stages || []).forEach((stg, i) =>
+      legend.appendChild(el("span", { class: "legend-item" }, [
+        el("span", { class: "legend-dot", style: `background:${vcolor(i)}` }, ""),
+        `introduced at V${i + 1}`,
+      ])));
+    wrap.appendChild(legend);
+    return constructStepCard(2, "Pool every oracle skill, rank by task coverage",
+      "Across the whole domain we count how many tasks each oracle skill covers, then rank skills most-covering → long tail. Bars are colored by the version that first introduces the skill — the most foundational skills anchor the earliest versions.",
+      wrap);
+  }
+
+  // Step 3 — grow nested cumulative libraries S₁ ⊂ S₂ ⊂ S₃.
+  function skdsStep3(stages) {
+    const maxCum = Math.max(1, ...stages.map((s) => s.num_cumulative_skills || 0));
+    const wrap = el("div", { class: "skds-rings" });
+    stages.forEach((s, i) => {
+      const col = el("div", { class: "skds-ring-col" });
+      const bar = el("div", { class: "skds-ring-bar" });
+      // stacked: carried (cumulative - new) + new
+      const carried = (s.num_cumulative_skills || 0) - (s.num_new_skills || 0);
+      const pCarried = (carried / maxCum) * 100;
+      const pNew = ((s.num_new_skills || 0) / maxCum) * 100;
+      bar.appendChild(el("div", { class: "skds-ring-seg carried", style: `height:${pCarried}%`, title: `${carried} carried` }, ""));
+      bar.appendChild(el("div", { class: "skds-ring-seg new", style: `height:${pNew}%; background:${vcolor(i)}`, title: `${s.num_new_skills} new` }, ""));
+      col.appendChild(bar);
+      col.appendChild(el("div", { class: "skds-ring-cap" }, [
+        el("b", {}, `V${s.version}`),
+        el("span", { class: "muted" }, `|S|=${s.num_cumulative_skills}`),
+        el("span", { class: "chip chip-new" }, `+${s.num_new_skills}`),
+      ]));
+      wrap.appendChild(col);
+    });
+    return constructStepCard(3, "Grow nested libraries S₁ ⊂ S₂ ⊂ S₃",
+      "Each version keeps every earlier skill and adds the next cohort, so the oracle library only ever accumulates. The colored cap is the skills new at that version; the grey base is carried forward.",
+      wrap);
+  }
+
+  // Step 4 — assign every task to the earliest version a *new* skill appears.
+  function skdsStep4(stages) {
+    const maxN = Math.max(1, ...stages.map((s) => s.num_new_tasks || 0));
+    const wrap = el("div", { class: "skds-assign" });
+    stages.forEach((s, i) => {
+      const col = el("div", { class: "skds-assign-col" });
+      col.appendChild(el("div", { class: "skds-assign-bar" }, [
+        el("div", { class: "skds-assign-fill", style: `height:${((s.num_new_tasks || 0) / maxN) * 100}%; background:${vcolor(i)}` },
+          el("span", { class: "skds-assign-n" }, String(s.num_new_tasks || 0))),
+      ]));
+      col.appendChild(el("div", { class: "skds-assign-cap" }, [
+        el("b", {}, `V${s.version}`),
+        el("span", { class: "muted" }, `adapt ${s.num_adapt ?? "?"} · test ${s.num_test ?? "?"}`),
+        el("span", { class: "muted small" }, (s.new_skill_names || []).slice(0, 2).join(", ") + ((s.new_skill_names || []).length > 2 ? " …" : "")),
+      ]));
+      wrap.appendChild(col);
+    });
+    return constructStepCard(4, "Place each task at the earliest version its skill is new",
+      "A task lands at the version that first introduces a skill it needs — so every task exercises at least one skill that is new at its version (older skills are optional context). Bars show how many tasks each version ships.",
+      wrap);
+  }
+
+  // Step 5 — the guarantees this construction gives.
+  function skdsStep5(sum) {
+    const active = (sum && sum.active_skills) || [];
+    const inactive = (sum && sum.inactive_skills) || [];
+    const body = el("div", {});
+    body.appendChild(el("ul", { class: "skds-feats" }, [
+      el("li", { html: "<b>Skills are latent</b>: required to solve a task but never shown in the system prompt — the agent must <b>author</b> covering skills." }),
+      el("li", { html: "<b>Oracle tools are provided</b>, so a failure isolates the missing <b>skill</b>, not tool discovery." }),
+      el("li", { html: "<b>Each task needs a skill new at its version</b>; carried skills become optional distractors as the library grows." }),
+      el("li", { html: "<b>The library only accumulates</b> (S₁ ⊂ S₂ ⊂ …) — nothing is removed." }),
+    ]));
+    body.appendChild(el("div", { class: "skds-active-split" }, [
+      el("div", {}, [
+        el("div", { class: "evo-card-sublabel" }, `${active.length} active oracle skills`),
+        el("div", { class: "chip-row" }, active.length
+          ? active.slice(0, 30).map((s) => el("span", { class: "chip", title: s }, s))
+          : [el("span", { class: "muted" }, "—")]),
+      ]),
+      inactive.length ? el("div", {}, [
+        el("div", { class: "evo-card-sublabel" }, `${inactive.length} inactive (held out, not shipped)`),
+        el("div", { class: "chip-row" }, inactive.map((s) => el("span", { class: "chip chip-retired", title: s }, s))),
+      ]) : null,
+    ]));
+    return constructStepCard(5, "What this construction guarantees", "", body);
+  }
+
+  // ===== EVOLUTION =========================================================
+  function renderEvolution(root, evo) {
+    root.innerHTML = "";
+    root.appendChild(el("div", { class: "evo-header" }, [
+      el("h2", { class: "evo-title" }, `${evo.domain} · skill library evolution`),
+      el("p", { class: "muted" },
+        `${evo.total_tasks ?? "?"} tasks · ${evo.num_stages ?? "?"} versions · ${evo.n_skills_total} oracle skills total`),
+    ]));
+
+    root.appendChild(datasetStatsTable(evo.stages, {
+      resourceLabel: "skills", cumKey: "num_cumulative_skills", newKey: "num_new_skills",
+    }));
+
+    const cards = el("div", { class: "evo-cards" });
+    (evo.stages || []).forEach((s, i) => {
+      const newChips = (s.new_skill_names || s.new_skills || []).slice(0, 10).map((t) =>
+        el("span", { class: "chip chip-new", title: t }, t));
+      const moreNew = (s.new_skills || []).length - newChips.length;
+      if (moreNew > 0) newChips.push(el("span", { class: "chip chip-more" }, `+${moreNew} more`));
+      cards.appendChild(el("div", { class: "evo-card" }, [
+        el("div", { class: "evo-card-head" }, [
+          el("div", { class: "evo-card-name" }, s.name || `V${i + 1}`),
+          el("div", { class: "evo-card-meta" }, `|S|=${s.num_cumulative_skills} · +${s.num_new_skills}`),
+        ]),
+        el("div", { class: "evo-card-stats" }, [
+          evoStat("tasks", s.num_new_tasks),
+          evoStat("adapt", s.num_adapt),
+          evoStat("test", s.num_test),
+          evoStat("skills/task", fmtStat(s.skills_per_task)),
+          evoStat("tools/task", fmtStat(s.tools_per_task)),
+          evoStat("verifiers/task", fmtStat(s.verifiers_per_task)),
+        ]),
+        el("div", { class: "evo-card-section" }, [
+          el("div", { class: "evo-card-sublabel" }, `+${s.num_new_skills} new skills`),
+          el("div", { class: "chip-row" }, newChips.length ? newChips : [el("span", { class: "muted" }, "—")]),
+        ]),
+        el("div", { class: "evo-card-section" }, [
+          el("div", { class: "evo-card-sublabel" }, "most-used skills in oracle solutions"),
+          el("div", { class: "chip-row" }, (s.top_skill_usage || []).slice(0, 8).map((u) =>
+            el("span", { class: "chip chip-usage", title: `${u.name} · used in ${u.count} tasks` }, [
+              el("span", {}, u.name || u.skill),
+              el("span", { class: "chip-count" }, String(u.count)),
+            ]))),
+        ]),
+      ]));
+    });
+    root.appendChild(cards);
+    root.appendChild(skdsComplexityChart(evo));
+    root.appendChild(skdsSkillTimeline(evo));
+  }
+
+  function skdsComplexityChart(evo) {
+    const wrap = el("div", { class: "evo-chart card" });
+    wrap.appendChild(el("h3", { class: "evo-section-title" }, "Library growth & task complexity over versions"));
+    const stages = evo.stages || [];
+    if (!stages.length) { wrap.appendChild(el("div", { class: "muted" }, "No versions.")); return wrap; }
+    const W = Math.max(420, stages.length * 110), H = 220, padL = 50, padR = 80, padT = 18, padB = 36;
+    const xs = stages.map((_, i) => padL + (i * (W - padL - padR)) / Math.max(1, stages.length - 1));
+    const series = [
+      { name: "|S| (cumulative skills)", color: "#2563eb", values: stages.map((s) => s.num_cumulative_skills), axis: "left" },
+      { name: "+N new skills", color: "#16a34a", values: stages.map((s) => s.num_new_skills), axis: "left" },
+      { name: "avg skills/task", color: "#7c3aed", values: stages.map((s) => s.skills_per_task?.mean ?? null), axis: "right" },
+      { name: "avg tools/task", color: "#f59e0b", values: stages.map((s) => s.tools_per_task?.mean ?? null), axis: "right" },
+    ];
+    const lMax = Math.max(1, ...series.filter((s) => s.axis === "left").flatMap((s) => s.values).filter((v) => v != null));
+    const rMax = Math.max(1, ...series.filter((s) => s.axis === "right").flatMap((s) => s.values).filter((v) => v != null));
+    const yL = (v) => padT + (H - padT - padB) * (1 - v / lMax);
+    const yR = (v) => padT + (H - padT - padB) * (1 - v / rMax);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "evo-svg");
+    svg.style.width = "100%"; svg.style.maxWidth = "100%"; svg.style.height = `${H}px`;
+    svg.appendChild(mkSvgLine(padL, padT, padL, H - padB, "#cbd5e1"));
+    svg.appendChild(mkSvgLine(W - padR, padT, W - padR, H - padB, "#cbd5e1"));
+    svg.appendChild(mkSvgLine(padL, H - padB, W - padR, H - padB, "#cbd5e1"));
+    stages.forEach((s, i) => svg.appendChild(mkSvgText(xs[i], H - padB + 18, s.name || `V${i + 1}`, "#64748b", "middle")));
+    for (let k = 0; k <= 4; k++) {
+      const v = Math.round((lMax * k) / 4), y = yL(v);
+      svg.appendChild(mkSvgText(padL - 6, y + 3, String(v), "#64748b", "end", 10));
+      svg.appendChild(mkSvgLine(padL, y, W - padR, y, "rgba(15,23,42,0.07)"));
+    }
+    for (let k = 0; k <= 4; k++) {
+      const v = ((rMax * k) / 4).toFixed(1);
+      svg.appendChild(mkSvgText(W - padR + 6, yR(parseFloat(v)) + 3, v, "#64748b", "start", 10));
+    }
+    series.forEach((ser) => {
+      const yFn = ser.axis === "left" ? yL : yR; let prev = null;
+      ser.values.forEach((v, i) => {
+        if (v == null) { prev = null; return; }
+        const cx = xs[i], cy = yFn(v);
+        if (prev) svg.appendChild(mkSvgLine(prev.x, prev.y, cx, cy, ser.color, 2));
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", 3.5); c.setAttribute("fill", ser.color);
+        svg.appendChild(c);
+        svg.appendChild(mkSvgText(cx, cy - 8, Number.isInteger(v) ? String(v) : v.toFixed(1), ser.color, "middle", 10));
+        prev = { x: cx, y: cy };
+      });
+    });
+    const legend = el("div", { class: "evo-legend" });
+    series.forEach((ser) => legend.appendChild(el("span", { class: "legend-item" }, [
+      el("span", { class: "legend-dot", style: `background:${ser.color}` }, ""),
+      `${ser.name} (${ser.axis === "left" ? "left" : "right"} axis)`,
+    ])));
+    wrap.appendChild(svg); wrap.appendChild(legend);
+    return wrap;
+  }
+
+  function skdsSkillTimeline(evo) {
+    const wrap = el("div", { class: "evo-timeline card" });
+    const rows = evo.skill_timeline || [];
+    wrap.appendChild(el("h3", { class: "evo-section-title" },
+      `Skill library timeline — when each oracle skill joined (${rows.length} skills, ${evo.num_stages} versions)`));
+    if (!rows.length) { wrap.appendChild(el("div", { class: "muted" }, "No skills.")); return wrap; }
+    const stages = evo.stages || [];
+    const table = el("table", { class: "evo-timeline-table" });
+    const hr = el("tr");
+    hr.appendChild(el("th", { class: "tool-col" }, "Skill"));
+    stages.forEach((s) => hr.appendChild(el("th", {}, s.name || "")));
+    hr.appendChild(el("th", {}, "Intro"));
+    table.appendChild(el("thead", {}, [hr]));
+    const tbody = el("tbody");
+    rows.forEach((row) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", { class: "tool-name", title: row.skill }, row.name || row.skill));
+      row.presence.forEach((p) => {
+        const td = el("td", { class: `cell cell-${p}` });
+        td.title = `${row.name || row.skill} · ${p}`;
+        td.textContent = p === "new" ? "●" : p === "present" ? "▪" : "";
+        tr.appendChild(td);
+      });
+      tr.appendChild(el("td", { class: "intro-cell" }, stages[row.intro_stage]?.name || `V${row.intro_stage + 1}`));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    wrap.appendChild(el("div", { class: "evo-legend" }, [
+      el("span", { class: "legend-item" }, [el("span", { class: "swatch swatch-new" }, ""), "newly introduced"]),
+      el("span", { class: "legend-item" }, [el("span", { class: "swatch swatch-present" }, ""), "present"]),
+      el("span", { class: "legend-item" }, [el("span", { class: "swatch swatch-absent" }, ""), "absent"]),
+    ]));
+    return wrap;
+  }
+
+  // ===== REAL-WORLD FIT ====================================================
+  function renderRealworld(root, data) {
+    root.innerHTML = "";
+    const ms = data.match_summary || {};
+    const real = ms.real || null;
+    const sims = ms.simulated || [];
+    root.appendChild(el("div", { class: "rw-header" }, [
+      el("h2", { class: "rw-title" }, "Does our evolving skill benchmark look like the real world?"),
+      el("p", { class: "muted rw-subtitle" },
+        "We compare each simulated domain's oracle skill structure against the Org62 production trace " +
+        "(640K skills across 4.1K intents). Procedural depth (steps per skill), how many skills a task needs, " +
+        "and the reuse heavy-tail (Zipf α / Gini) line up on the same regime — evidence our synthetic skill " +
+        "library is a faithful microcosm of a real one."),
+    ]));
+
+    if (real && sims.length) root.appendChild(skdsRealStatsTable(real, sims));
+
+    const figs = data.figures || [];
+    if (figs.length) {
+      const grid = el("div", { class: "rw-fig-grid" });
+      const CAPS = {
+        "rank_frequency.png": ["Skill-reuse rank-frequency (log–log)", "How often each skill is reused vs its rank — the heavy-tail / Zipf law shared by real and simulated libraries."],
+        "skills_per_task.png": ["Skills per task", "Distribution of how many oracle skills a single task requires."],
+        "steps_per_skill.png": ["Steps per skill", "Procedural depth — number of steps a skill encodes."],
+        "skill_emergence.png": ["Skill emergence", "How the cumulative skill universe grows as more intents/tasks are seen."],
+        "match_table.png": ["Summary match table", "Side-by-side of the key structural statistics."],
+      };
+      const order = ["rank_frequency.png", "skills_per_task.png", "steps_per_skill.png", "skill_emergence.png", "match_table.png"];
+      order.filter((f) => figs.includes(f)).concat(figs.filter((f) => !order.includes(f))).forEach((fig) => {
+        const cap = CAPS[fig] || [fig, ""];
+        grid.appendChild(el("figure", { class: "rw-fig card" }, [
+          el("figcaption", { class: "rw-fig-cap" }, [
+            el("strong", {}, cap[0]),
+            cap[1] ? el("p", { class: "muted small" }, cap[1]) : null,
+          ]),
+          el("img", {
+            class: "skds-rw-img",
+            src: `/api/skill-datasets/realworld_comparison/image?name=${encodeURIComponent(fig)}`,
+            alt: cap[0], loading: "lazy",
+          }),
+        ]));
+      });
+      root.appendChild(grid);
+    }
+  }
+
+  function skdsRealStatsTable(real, sims) {
+    const metrics = [
+      ["n_skills", "library size", 0],
+      ["steps_per_skill_mean", "steps / skill (mean)", 2],
+      ["skills_per_task_mean", "skills / task (mean)", 2],
+      ["reuse_zipf_alpha", "reuse Zipf α", 2],
+      ["reuse_gini", "reuse Gini", 2],
+    ];
+    const card = el("div", { class: "card skds-rw-stats" });
+    card.appendChild(el("h3", { class: "evo-section-title" }, "Structural fingerprints — Org62 (real) vs simulated domains"));
+    const table = el("table", { class: "rw-stats-table" });
+    const hr = el("tr");
+    hr.appendChild(el("th", {}, "metric"));
+    hr.appendChild(el("th", { class: "rw-real-col" }, real.name || "Org62 (real)"));
+    sims.forEach((s) => hr.appendChild(el("th", {}, s.name)));
+    table.appendChild(el("thead", {}, [hr]));
+    const tbody = el("tbody");
+    metrics.forEach(([key, label, dp]) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", { class: "rw-metric-name" }, label));
+      const rv = real[key];
+      tr.appendChild(el("td", { class: "rw-real-col" }, rv == null ? "—" : num(rv, dp)));
+      sims.forEach((s) => tr.appendChild(el("td", {}, s[key] == null ? "—" : num(s[key], dp))));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    card.appendChild(table);
+    return card;
+  }
+
+  // ===== TASK BROWSER ======================================================
+  function renderStages() {
+    const root = $("#skds-stages");
+    root.innerHTML = "";
+    const sum = st.sum.data;
+    if (!sum) { root.appendChild(el("div", { class: "muted" }, "No summary.")); return; }
+    root.appendChild(el("div", { class: "section-header" }, [
+      el("div", { class: "title" }, sum.domain),
+      el("div", { class: "sub" }, `${sum.n_tasks_total ?? "?"} tasks · ${sum.n_versions ?? "?"} versions · ${sum.active_skills?.length ?? "?"} active skills`),
+    ]));
+    (sum.stages || []).forEach((s) => {
+      root.appendChild(el("div", { class: "stage-pill" }, [
+        el("span", { class: "lbl" }, `V${s.version}`),
+        el("span", { class: "meta" }, `skills=${s.num_cumulative_skills} (+${s.num_new_skills}) · adapt=${s.n_train} · test=${s.n_test}`),
+      ]));
+    });
+  }
+
+  function renderTaskList() {
+    const filter = ($("#skds-filter").value || "").toLowerCase();
+    const list = $("#skds-task-list");
+    list.innerHTML = "";
+    const filtered = st.tasks.filter((t) => !filter || (t.task_id && t.task_id.toLowerCase().includes(filter)));
+    $("#skds-task-count").textContent = `${filtered.length} / ${st.tasks.length} tasks`;
+    for (const t of filtered) {
+      const li = el("li", { onclick: () => openTask(t) }, [
+        el("span", { class: `badge stage-${t.stage}` }, `V${t.version}`),
+        el("span", { class: "skds-li-split" }, t.split),
+        el("span", {}, t.task_id),
+        el("span", { class: "skds-li-n", title: `${t.n_oracle_skills} oracle skills` }, `${t.n_oracle_skills} sk`),
+      ]);
+      li.dataset.tid = `${t.version}/${t.split}/${t.task_id}`;
+      list.appendChild(li);
+    }
+  }
+
+  async function openTask(t) {
+    $$("#skds-task-list li").forEach((li) =>
+      li.classList.toggle("active", li.dataset.tid === `${t.version}/${t.split}/${t.task_id}`));
+    const detail = $("#skds-detail");
+    detail.innerHTML = `<div class="empty">Loading…</div>`;
+    const url = new URL(`/api/skill-datasets/${st.domain}/task`, location.origin);
+    url.searchParams.set("version", String(t.version));
+    url.searchParams.set("split", t.split);
+    url.searchParams.set("task_id", t.task_id);
+    try {
+      const cfg = await fetchJson(url);
+      if (cfg.error) { detail.innerHTML = `<div class="empty error">${escapeHtml(cfg.error)}</div>`; return; }
+      renderTaskDetail(detail, cfg);
+    } catch (e) {
+      detail.innerHTML = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+    }
+  }
+
+  // An oracle-skill card whose body lazily loads the FULL skill (SKILL.md +
+  // every references/ file) the first time it is expanded.
+  function skdsSkillCard(s) {
+    const det = el("details", { class: "skds-skill-full" }, [
+      el("summary", {}, "Full SKILL.md & references/"),
+      el("div", { class: "skds-skill-full-body" }, [el("div", { class: "muted small" }, "Loading…")]),
+    ]);
+    let loaded = false;
+    det.addEventListener("toggle", async () => {
+      if (!det.open || loaded) return;
+      loaded = true;
+      const body = det.querySelector(".skds-skill-full-body");
+      try {
+        const url = new URL(`/api/skill-datasets/${st.domain}/skill`, location.origin);
+        url.searchParams.set("slug", s.slug);
+        renderSkillFull(body, await fetchJson(url));
+      } catch (e) {
+        loaded = false;
+        body.innerHTML = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+      }
+    });
+    return el("div", { class: "skds-skill-item" }, [
+      el("div", { class: "skds-skill-name" }, s.name || s.slug),
+      el("code", { class: "skds-skill-slug" }, s.slug),
+      s.description ? el("div", { class: "muted small" }, s.description) : null,
+      det,
+    ]);
+  }
+
+  function renderSkillFull(root, full) {
+    root.innerHTML = "";
+    if (full.error) { root.appendChild(el("div", { class: "empty error" }, full.error)); return; }
+    root.appendChild(el("div", { class: "skds-file-h" }, "SKILL.md"));
+    root.appendChild(el("pre", { class: "skds-file-pre" }, full.body || "(empty)"));
+    const refs = full.references || [];
+    if (refs.length) {
+      root.appendChild(el("div", { class: "skds-file-h" }, `references/ (${refs.length})`));
+      refs.forEach((r, i) => {
+        const tag = r.truncated ? "  (truncated)" : r.binary ? `  (binary · ${r.size} B)` : "";
+        root.appendChild(el("details", { class: "skds-ref", open: i === 0 ? "" : null }, [
+          el("summary", {}, `${r.name}${tag}`),
+          r.content != null
+            ? el("pre", { class: "skds-file-pre" }, r.content)
+            : el("div", { class: "muted small" }, "binary or unreadable file"),
+        ]));
+      });
+    }
+    if ((full.other_files || []).length) {
+      root.appendChild(el("div", { class: "skds-file-h" }, "other files in skill dir"));
+      root.appendChild(el("div", { class: "chip-row" },
+        full.other_files.map((f) => el("span", { class: "chip" }, f))));
+    }
+  }
+
+  function renderTaskDetail(root, cfg) {
+    root.innerHTML = "";
+    root.appendChild(el("div", { class: "detail-section" }, [
+      el("h2", {}, cfg.task_id),
+      el("div", { class: "muted" }, `${cfg.domain} · V${cfg.version} · ${cfg.split}`),
+    ]));
+
+    if (cfg.user_prompt) {
+      root.appendChild(el("div", { class: "detail-section" }, [
+        el("h3", {}, "User prompt"),
+        el("div", { class: "skds-prompt" }, cfg.user_prompt),
+      ]));
+    }
+
+    // Oracle skills (latent) — name + description + expandable full SKILL.md/refs
+    const osk = cfg.oracle_skills || [];
+    root.appendChild(el("div", { class: "detail-section" }, [
+      el("h3", {}, `Oracle skills · latent (${osk.length})`),
+      el("div", { class: "skds-skill-list" }, osk.length
+        ? osk.map((s) => skdsSkillCard(s))
+        : [el("span", { class: "muted" }, "—")]),
+    ]));
+
+    // Cumulative library at this version (context)
+    const cum = cfg.cumulative_oracle_skills || [];
+    if (cum.length) {
+      root.appendChild(el("div", { class: "detail-section" }, [
+        el("h3", {}, `Cumulative oracle library at V${cfg.version} (${cum.length})`),
+        el("div", { class: "chip-row" }, cum.map((s) =>
+          el("span", { class: "chip" + (osk.some((o) => o.slug === s.slug) ? " chip-new" : ""), title: s.slug }, s.name || s.slug))),
+      ]));
+    }
+
+    // Oracle tools (provided)
+    const tools = cfg.selected_tools || [];
+    if (tools.length) {
+      const sec = el("div", { class: "detail-section" }, [el("h3", {}, `Oracle tools · provided (${tools.length})`)]);
+      const wrap = el("div", {});
+      tools.forEach((tn) => wrap.appendChild(el("span", { class: "tag tool" }, tn)));
+      sec.appendChild(wrap);
+      root.appendChild(sec);
+    }
+
+    // Verifiers
+    const verifiers = cfg.verifiers || [];
+    if (verifiers.length) {
+      const sec = el("div", { class: "detail-section" }, [el("h3", {}, `Verifiers (${verifiers.length})`)]);
+      const tbl = el("table", { class: "verif" });
+      tbl.appendChild(el("thead", {}, [el("tr", {}, [
+        el("th", {}, "#"), el("th", {}, "Name"), el("th", {}, "Type"),
+        el("th", {}, "Expected"), el("th", {}, "Compare"), el("th", {}, "Query / Config"),
+      ])]));
+      const tbody = el("tbody", {});
+      verifiers.forEach((v, i) => {
+        const vc = v.validation_config || {};
+        tbody.appendChild(el("tr", {}, [
+          el("td", {}, String(i + 1)),
+          el("td", {}, v.name || ""),
+          el("td", {}, v.verifier_type || ""),
+          el("td", {}, vc.expected_value != null ? JSON.stringify(vc.expected_value) : ""),
+          el("td", {}, vc.comparison_type || ""),
+          el("td", { class: "query" }, vc.query || JSON.stringify(vc, null, 2)),
+        ]));
+      });
+      tbl.appendChild(tbody);
+      sec.appendChild(tbl);
+      root.appendChild(sec);
+    }
+
+    if (cfg.gym_servers_config && cfg.gym_servers_config.length) {
+      root.appendChild(el("details", { class: "collapse" }, [
+        el("summary", {}, "Gym servers config"),
+        el("pre", { class: "collapse-body" }, JSON.stringify(cfg.gym_servers_config, null, 2)),
+      ]));
+    }
+    if (cfg.system_prompt) {
+      root.appendChild(el("details", { class: "collapse" }, [
+        el("summary", {}, "System prompt (skills stripped out)"),
+        el("pre", { class: "collapse-body" }, cfg.system_prompt),
+      ]));
+    }
+  }
+
+  return { onShow };
+})();
+
+// ---------------------------------------------------------------------------
+// AGDS — Agents / Benchmark (dataset-building) explorer
+// ---------------------------------------------------------------------------
+// The AGENTS-axis analogue of the Tools/Skills "Benchmark" views: the same four
+// sub-tabs — How it's built / Evolution / Real-world fit / Task Browser — but
+// the evolving resource is the GIVEN, accumulating pool of tool-scoped SUBAGENTS
+// (A₁ ⊂ A₂ ⊂ …, #agents = #skills). Data comes from /api/agent-datasets/*
+// (build_engine over the materialized data/evovling_agents tree). Reuses the
+// ds-/evo-/rw-/skds- styles + shared el()/chart helpers so it matches 1:1.
+const AGDS = (() => {
+  const st = {
+    mounted: false,
+    domain: null,
+    mode: "construct",
+    sum: { data: null },
+    evo: { data: null, loading: false },
+    rw: { data: null, loading: false },
+    insp: { scopingDomain: null, coverageDomain: null },
+    tasks: [],
+    detailVersion: null,
+  };
+  const VCOLORS = ["#2563eb", "#0ea5e9", "#6366f1", "#d97706", "#dc2626", "#059669", "#db2777", "#0891b2"];
+  const vcolor = (i) => VCOLORS[i % VCOLORS.length];
+
+  // ===== lifecycle =========================================================
+  async function onShow() {
+    if (st.mounted) return;
+    st.mounted = true;
+    wire();
+    try {
+      const d = await fetchJson("/api/agent-datasets");
+      const sel = $("#agds-domain");
+      sel.innerHTML = (d.domains || [])
+        .map((x) => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`)
+        .join("");
+      st.domain = (d.domains || [])[0] || null;
+      if (st.domain) sel.value = st.domain;
+    } catch (e) {
+      $("#agds-construct").innerHTML =
+        `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+      return;
+    }
+    applyModeVisibility(st.mode);
+    await onDomainChange();
+  }
+
+  function wire() {
+    $("#agds-modes").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-agds-mode]");
+      if (b) setMode(b.dataset.agdsMode);
+    });
+    $("#agds-domain").addEventListener("change", onDomainChange);
+    $("#agds-version").addEventListener("change", reloadTaskList);
+    $("#agds-split").addEventListener("change", reloadTaskList);
+    $("#agds-filter").addEventListener("input", renderTaskList);
+  }
+
+  function applyModeVisibility(mode) {
+    $$("#agds-modes [data-agds-mode]").forEach((b) =>
+      b.classList.toggle("active", b.dataset.agdsMode === mode));
+    $(".agds-browser-tools").style.display = mode === "browser" ? "" : "none";
+    $("#agds-browser").style.display = mode === "browser" ? "" : "none";
+    $("#agds-evolution").style.display = mode === "evolution" ? "" : "none";
+    $("#agds-construct").style.display = mode === "construct" ? "" : "none";
+    const rw = $("#agds-realworld");
+    if (rw) rw.style.display = mode === "realworld" ? "" : "none";
+    const sc = $("#agds-scoping");
+    if (sc) sc.style.display = mode === "scoping" ? "" : "none";
+    const cv = $("#agds-coverage");
+    if (cv) cv.style.display = mode === "coverage" ? "" : "none";
+  }
+
+  function setMode(mode) {
+    st.mode = mode;
+    applyModeVisibility(mode);
+    if (mode === "construct" || mode === "evolution") {
+      if (!st.evo.data) loadEvolution();
+      else if (mode === "construct") renderConstruction($("#agds-construct"), st.evo.data, st.sum.data);
+      else renderEvolution($("#agds-evolution"), st.evo.data);
+    } else if (mode === "realworld") {
+      loadRealworld();
+    } else if (mode === "scoping" || mode === "coverage") {
+      loadInspector(mode);
+    }
+  }
+
+  // Tool scoping + Coverage are the build-inspector views, relocated here from
+  // the old Agents nav. They are rendered by the BI module straight into our
+  // containers, driven by the AGDS domain selector (one render per domain).
+  async function loadInspector(mode) {
+    const cont = mode === "scoping" ? $("#agds-scoping") : $("#agds-coverage");
+    if (!cont) return;
+    const tab = mode === "scoping" ? "agents-scoping" : "agents-coverage";
+    const seenKey = mode === "scoping" ? "scopingDomain" : "coverageDomain";
+    if (st.insp[seenKey] === st.domain) return;
+    await BI.renderInto(tab, cont, st.domain);
+    st.insp[seenKey] = st.domain;
+  }
+
+  // ===== data loads ========================================================
+  async function onDomainChange() {
+    st.domain = $("#agds-domain").value;
+    st.evo.data = null;
+    st.insp.scopingDomain = null;
+    st.insp.coverageDomain = null;
+    try {
+      st.sum.data = await fetchJson(`/api/agent-datasets/${st.domain}/summary`);
+    } catch (e) {
+      st.sum.data = null;
+    }
+    populateVersions();
+    renderStages();
+    await reloadTaskList();
+    if (st.mode === "construct" || st.mode === "evolution") await loadEvolution();
+    else if (st.mode === "realworld") await loadRealworld();
+    else if (st.mode === "scoping" || st.mode === "coverage") await loadInspector(st.mode);
+  }
+
+  function populateVersions() {
+    const sel = $("#agds-version");
+    const stages = st.sum.data?.stages || [];
+    sel.innerHTML = `<option value="">all</option>` +
+      stages.map((s) => `<option value="${s.version}">V${s.version}</option>`).join("");
+  }
+
+  async function loadEvolution() {
+    if (!st.domain || st.evo.loading) return;
+    if (st.evo.data) {
+      renderConstruction($("#agds-construct"), st.evo.data, st.sum.data);
+      renderEvolution($("#agds-evolution"), st.evo.data);
+      return;
+    }
+    st.evo.loading = true;
+    try {
+      const data = await fetchJson(`/api/agent-datasets/${st.domain}/evolution`);
+      st.evo.data = data;
+      renderConstruction($("#agds-construct"), data, st.sum.data);
+      renderEvolution($("#agds-evolution"), data);
+    } catch (e) {
+      const msg = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+      $("#agds-evolution").innerHTML = msg;
+      $("#agds-construct").innerHTML = msg;
+    } finally {
+      st.evo.loading = false;
+    }
+  }
+
+  async function loadRealworld() {
+    const root = $("#agds-realworld");
+    if (st.rw.data) { renderRealworld(root, st.rw.data); return; }
+    if (st.rw.loading) return;
+    st.rw.loading = true;
+    root.innerHTML = `<div class="empty">Loading real-world comparison…</div>`;
+    try {
+      const data = await fetchJson("/api/agent-datasets/realworld_comparison");
+      st.rw.data = data;
+      renderRealworld(root, data);
+    } catch (e) {
+      root.innerHTML = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+    } finally {
+      st.rw.loading = false;
+    }
+  }
+
+  async function reloadTaskList() {
+    if (!st.domain) return;
+    const version = $("#agds-version").value;
+    const split = $("#agds-split").value;
+    const url = new URL(`/api/agent-datasets/${st.domain}/tasks`, location.origin);
+    if (version !== "") url.searchParams.set("version", version);
+    url.searchParams.set("split", split || "all");
+    try {
+      const data = await fetchJson(url);
+      st.tasks = data.tasks || [];
+    } catch (e) {
+      st.tasks = [];
+    }
+    renderTaskList();
+  }
+
+  // ===== CONSTRUCTION ("How it's built") ===================================
+  function renderConstruction(root, evo, sum) {
+    root.innerHTML = "";
+    const stages = evo.stages || [];
+    const fracPct = sum && sum.multi_agent_frac != null ? Math.round(sum.multi_agent_frac * 100) : null;
+    root.appendChild(el("div", { class: "evo-header" }, [
+      el("h2", { class: "evo-title" }, `How the agent benchmark is built · ${evo.domain}`),
+      el("p", { class: "muted" },
+        `Each oracle skill becomes one tool-scoped subagent (#agents = #skills), built deterministically — no LLM. ` +
+        `A task's gold tools are split across its specialists so it needs ≥2 agents${fracPct != null ? ` (${fracPct}% of tasks here are multi-agent)` : ""}, ` +
+        `and the given agent pool only accumulates A₁ ⊂ A₂ ⊂ … . The lead is a tool-less router; we test how well it delegates. ` +
+        `Below, the five construction steps on the current domain (${evo.n_agents_total} agents, ${stages.length} versions, ${evo.total_tasks ?? "?"} tasks).`),
+    ]));
+    root.appendChild(agdsStep1());
+    root.appendChild(agdsStep2(evo, sum));
+    root.appendChild(agdsStep3(stages));
+    root.appendChild(agdsStep4(stages));
+    root.appendChild(agdsStep5(sum));
+  }
+
+  // Step 1 — anatomy of an agent sample: X → oracle agents (given) → split tools → Y
+  function agdsStep1() {
+    const W = 720, H = 210;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("class", "construct-svg");
+    svg.style.width = "100%"; svg.style.maxWidth = `${W}px`; svg.style.height = "auto";
+    const blue = "#2563eb", purple = "#7c3aed", gold = "#ca8a04", green = "#16a34a", sub = "#64748b", txt = "#0f172a";
+    const boxes = [
+      { t: "Xᵢ", s: "user task", d: '"Onboard the hire and enroll benefits"', c: blue },
+      { t: "Aᵢ", s: "oracle agents (given)", d: "{ employee-records, benefits }", c: purple },
+      { t: "Tᵢ", s: "tools split across agents", d: "{ create_employee | enroll_benefit }", c: gold },
+      { t: "Yᵢ", s: "expected outcome", d: "verifier passes (rows written)", c: green },
+    ];
+    const boxW = 158, boxH = 116, gapX = (W - boxW * 4) / 5;
+    boxes.forEach((b, i) => {
+      const x = gapX + i * (boxW + gapX), y = 26;
+      svg.appendChild(svgRect(x, y, boxW, boxH, "#f8fafc", b.c, 8));
+      svg.appendChild(svgText(x + boxW / 2, y + 26, b.t, b.c, "middle", 20, 800));
+      svg.appendChild(svgText(x + boxW / 2, y + 46, b.s, sub, "middle", 10, 600));
+      const d = b.d;
+      svg.appendChild(svgText(x + boxW / 2, y + 72, d.slice(0, 26), txt, "middle", 9));
+      if (d.length > 26) svg.appendChild(svgText(x + boxW / 2, y + 86, d.slice(26, 52), txt, "middle", 9));
+      if (d.length > 52) svg.appendChild(svgText(x + boxW / 2, y + 100, d.slice(52, 78), txt, "middle", 9));
+      if (i < boxes.length - 1) {
+        const ax = x + boxW + 3, ex = x + boxW + gapX - 3, ay = y + boxH / 2;
+        const ln = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        ln.setAttribute("x1", ax); ln.setAttribute("y1", ay); ln.setAttribute("x2", ex); ln.setAttribute("y2", ay);
+        ln.setAttribute("stroke", sub); ln.setAttribute("stroke-width", 1.5);
+        ln.setAttribute("marker-end", "url(#agds-arrow)");
+        svg.appendChild(ln);
+        svg.appendChild(svgText((ax + ex) / 2, ay - 7, ["delegate", "split", "yields"][i], sub, "middle", 9, 600));
+      }
+    });
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    defs.innerHTML = `<marker id="agds-arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#64748b"/></marker>`;
+    svg.insertBefore(defs, svg.firstChild);
+    svg.appendChild(svgText(W / 2, H - 10,
+      "A tool-less lead routes Xᵢ to the gold oracle agents Aᵢ (⊆ the given pool); their tools Tᵢ split across agents, forcing coordination.",
+      sub, "middle", 11, 500));
+    return constructStepCard(1, "Each sample = (Xᵢ, Aᵢ, Tᵢ, Yᵢ) · #agents = #skills",
+      "The atomic unit pairs the user prompt with the ground-truth oracle AGENTS it needs — each built 1:1 from an oracle skill out of five deterministic parts (instruction · context · model · tools · skill). The oracle TOOLS are split across those agents (so a task needs ≥2) and the outcome is verifier-checkable. The lead agent holds no tools — it can only delegate.",
+      svg);
+  }
+
+  // Step 2 — collect & rank agents by task coverage, colored by intro version.
+  function agdsStep2(evo, sum) {
+    const counts = (sum && sum.task_count_per_agent) || {};
+    const toolCounts = (sum && sum.agent_tool_counts) || {};
+    const agents = (evo.agent_timeline || []).map((r) => ({
+      name: r.agent, label: r.name || r.agent, intro: r.intro_stage,
+      count: counts[r.agent] || 0, nTools: toolCounts[r.agent] ?? r.n_tools ?? 0,
+    })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const maxC = Math.max(1, ...agents.map((s) => s.count));
+    const rowH = 22, padL = 250, padR = 70, W = 720, H = Math.max(60, agents.length * rowH + 16);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("class", "construct-svg");
+    svg.style.width = "100%"; svg.style.maxWidth = `${W}px`; svg.style.height = "auto";
+    agents.forEach((s, i) => {
+      const y = 8 + i * rowH;
+      const bw = ((W - padL - padR) * s.count) / maxC;
+      const c = vcolor(s.intro);
+      svg.appendChild(svgText(padL - 8, y + rowH / 2 + 3,
+        (s.label.length > 38 ? s.label.slice(0, 37) + "…" : s.label), "#334155", "end", 10, 600));
+      svg.appendChild(svgRect(padL, y + 3, Math.max(2, bw), rowH - 8, c, c, 3));
+      svg.appendChild(svgText(padL + Math.max(2, bw) + 5, y + rowH / 2 + 3,
+        `${s.count} · ${s.nTools}t`, "#475569", "start", 9.5, 700));
+    });
+    const wrap = el("div", {});
+    wrap.appendChild(svg);
+    const legend = el("div", { class: "evo-legend" });
+    (evo.stages || []).forEach((stg, i) =>
+      legend.appendChild(el("span", { class: "legend-item" }, [
+        el("span", { class: "legend-dot", style: `background:${vcolor(i)}` }, ""),
+        `introduced at V${i + 1}`,
+      ])));
+    wrap.appendChild(legend);
+    return constructStepCard(2, "One agent per oracle skill, ranked by task coverage",
+      "Each oracle skill is materialized into exactly one subagent, then we count how many tasks each agent is gold for and rank them most-covering → long tail. Bars are colored by the version that first introduces the agent; the number after each bar is its task count · derived tool-scope size.",
+      wrap);
+  }
+
+  // Step 3 — grow the GIVEN cumulative pool A₁ ⊂ A₂ ⊂ A₃.
+  function agdsStep3(stages) {
+    const maxCum = Math.max(1, ...stages.map((s) => s.num_cumulative_agents || 0));
+    const wrap = el("div", { class: "skds-rings" });
+    stages.forEach((s, i) => {
+      const col = el("div", { class: "skds-ring-col" });
+      const bar = el("div", { class: "skds-ring-bar" });
+      const carried = (s.num_cumulative_agents || 0) - (s.num_new_agents || 0);
+      const pCarried = (carried / maxCum) * 100;
+      const pNew = ((s.num_new_agents || 0) / maxCum) * 100;
+      bar.appendChild(el("div", { class: "skds-ring-seg carried", style: `height:${pCarried}%`, title: `${carried} carried` }, ""));
+      bar.appendChild(el("div", { class: "skds-ring-seg new", style: `height:${pNew}%; background:${vcolor(i)}`, title: `${s.num_new_agents} new` }, ""));
+      col.appendChild(bar);
+      col.appendChild(el("div", { class: "skds-ring-cap" }, [
+        el("b", {}, `V${s.version}`),
+        el("span", { class: "muted" }, `|A|=${s.num_cumulative_agents}`),
+        el("span", { class: "chip chip-new" }, `+${s.num_new_agents}`),
+      ]));
+      wrap.appendChild(col);
+    });
+    return constructStepCard(3, "Grow the given pool A₁ ⊂ A₂ ⊂ A₃",
+      "Agents are a given, per-version resource (not hidden like skills): each version keeps every earlier agent and mounts the next cohort, so the pool only accumulates. The colored cap is the agents new at that version; the grey base is carried forward as tool-scoped distractors.",
+      wrap);
+  }
+
+  // Step 4 — assign each task to the earliest version a *new* agent appears,
+  // and surface how many tasks need ≥2 agents (coordination).
+  function agdsStep4(stages) {
+    const maxN = Math.max(1, ...stages.map((s) => s.num_new_tasks || 0));
+    const wrap = el("div", { class: "skds-assign" });
+    stages.forEach((s, i) => {
+      const total = s.num_new_tasks || 0;
+      const multi = s.n_multi_agent || 0;
+      const col = el("div", { class: "skds-assign-col" });
+      const bar = el("div", { class: "skds-assign-bar" });
+      const fill = el("div", { class: "skds-assign-fill", style: `height:${(total / maxN) * 100}%; background:${vcolor(i)}` },
+        el("span", { class: "skds-assign-n" }, String(total)));
+      // overlay: the multi-agent (coordination) portion of this version's tasks
+      if (total > 0 && multi > 0) {
+        fill.appendChild(el("div", {
+          class: "agds-assign-multi",
+          style: `height:${(multi / total) * 100}%`,
+          title: `${multi} of ${total} tasks need ≥2 agents`,
+        }, ""));
+      }
+      bar.appendChild(fill);
+      col.appendChild(bar);
+      col.appendChild(el("div", { class: "skds-assign-cap" }, [
+        el("b", {}, `V${s.version}`),
+        el("span", { class: "muted" }, `adapt ${s.num_adapt ?? "?"} · test ${s.num_test ?? "?"}`),
+        el("span", { class: "muted small" }, `${multi} multi-agent`),
+      ]));
+      wrap.appendChild(col);
+    });
+    return constructStepCard(4, "Place each task at the earliest version its agent is new",
+      "A task lands at the version that first introduces an agent it needs — so every task delegates to at least one agent new at its version (carried agents are optional distractors). The hatched band marks tasks whose tools span ≥2 agents, forcing the lead to coordinate.",
+      wrap);
+  }
+
+  // Step 5 — the guarantees this construction gives.
+  function agdsStep5(sum) {
+    const active = (sum && sum.active_agents) || [];
+    const distractor = (sum && sum.distractor_agents) || [];
+    const names = (sum && sum.agent_names) || {};
+    const fracPct = sum && sum.multi_agent_frac != null ? Math.round(sum.multi_agent_frac * 100) : null;
+    const body = el("div", {});
+    body.appendChild(el("ul", { class: "skds-feats" }, [
+      el("li", { html: "<b>Capability specialists</b>: the tool universe is partitioned into disjoint, COMPLETE bundles, each built into one specialist (instruction · context · model · tools · skill) deterministically — <b>no LLM</b>." }),
+      el("li", { html: `<b>Tools split across agents</b> (disjoint partition): each task stays fully solvable yet its tools fan out, so <b>${fracPct != null ? fracPct + "% of tasks need ≥2 agents" : "many tasks need ≥2 agents"}</b> — forcing the lead to delegate.` }),
+      el("li", { html: "<b>Agents are given and accumulate</b> (A₁ ⊂ A₂ ⊂ …); carried-forward extras are tool-scoped <b>distractors</b> a misroute physically can't use." }),
+      el("li", { html: "<b>The lead is a tool-less router</b> — the metric is purely how well it routes to the gold specialists." }),
+    ]));
+    body.appendChild(el("div", { class: "skds-active-split" }, [
+      el("div", {}, [
+        el("div", { class: "evo-card-sublabel" }, `${active.length} agents used as oracle`),
+        el("div", { class: "chip-row" }, active.length
+          ? active.slice(0, 30).map((s) => el("span", { class: "chip", title: s }, names[s] || s))
+          : [el("span", { class: "muted" }, "—")]),
+      ]),
+      distractor.length ? el("div", {}, [
+        el("div", { class: "evo-card-sublabel" }, `${distractor.length} distractor-only (never gold)`),
+        el("div", { class: "chip-row" }, distractor.map((s) => el("span", { class: "chip chip-retired", title: s }, names[s] || s))),
+      ]) : null,
+    ]));
+    return constructStepCard(5, "What this construction guarantees", "", body);
+  }
+
+  // ===== EVOLUTION =========================================================
+  function renderEvolution(root, evo) {
+    root.innerHTML = "";
+    root.appendChild(el("div", { class: "evo-header" }, [
+      el("h2", { class: "evo-title" }, `${evo.domain} · agent pool evolution`),
+      el("p", { class: "muted" },
+        `${evo.total_tasks ?? "?"} tasks · ${evo.num_stages ?? "?"} versions · ${evo.n_agents_total} agents total`),
+    ]));
+
+    root.appendChild(datasetStatsTable(evo.stages, {
+      resourceLabel: "agents", cumKey: "num_cumulative_agents", newKey: "num_new_agents",
+    }));
+
+    const cards = el("div", { class: "evo-cards" });
+    (evo.stages || []).forEach((s, i) => {
+      const newChips = (s.new_agent_names || s.new_agents || []).slice(0, 10).map((t) =>
+        el("span", { class: "chip chip-new", title: t }, t));
+      const moreNew = (s.new_agents || []).length - newChips.length;
+      if (moreNew > 0) newChips.push(el("span", { class: "chip chip-more" }, `+${moreNew} more`));
+      cards.appendChild(el("div", { class: "evo-card" }, [
+        el("div", { class: "evo-card-head" }, [
+          el("div", { class: "evo-card-name" }, s.name || `V${i + 1}`),
+          el("div", { class: "evo-card-meta" }, `|A|=${s.num_cumulative_agents} · +${s.num_new_agents}`),
+        ]),
+        el("div", { class: "evo-card-stats" }, [
+          evoStat("tasks", s.num_new_tasks),
+          evoStat("adapt", s.num_adapt),
+          evoStat("test", s.num_test),
+          evoStat("multi-agent", s.n_multi_agent),
+          evoStat("agents/task", fmtStat(s.agents_per_task)),
+          evoStat("tools/task", fmtStat(s.tools_per_task)),
+        ]),
+        el("div", { class: "evo-card-section" }, [
+          el("div", { class: "evo-card-sublabel" }, `+${s.num_new_agents} new agents`),
+          el("div", { class: "chip-row" }, newChips.length ? newChips : [el("span", { class: "muted" }, "—")]),
+        ]),
+        el("div", { class: "evo-card-section" }, [
+          el("div", { class: "evo-card-sublabel" }, "most-delegated agents in oracle solutions"),
+          el("div", { class: "chip-row" }, (s.top_agent_usage || []).slice(0, 8).map((u) =>
+            el("span", { class: "chip chip-usage", title: `${u.name} · gold in ${u.count} tasks` }, [
+              el("span", {}, u.name || u.agent),
+              el("span", { class: "chip-count" }, String(u.count)),
+            ]))),
+        ]),
+      ]));
+    });
+    root.appendChild(cards);
+    root.appendChild(agdsComplexityChart(evo));
+    root.appendChild(agdsAgentTimeline(evo));
+  }
+
+  function agdsComplexityChart(evo) {
+    const wrap = el("div", { class: "evo-chart card" });
+    wrap.appendChild(el("h3", { class: "evo-section-title" }, "Pool growth & task complexity over versions"));
+    const stages = evo.stages || [];
+    if (!stages.length) { wrap.appendChild(el("div", { class: "muted" }, "No versions.")); return wrap; }
+    const W = Math.max(420, stages.length * 110), H = 220, padL = 50, padR = 80, padT = 18, padB = 36;
+    const xs = stages.map((_, i) => padL + (i * (W - padL - padR)) / Math.max(1, stages.length - 1));
+    const series = [
+      { name: "|A| (cumulative agents)", color: "#2563eb", values: stages.map((s) => s.num_cumulative_agents), axis: "left" },
+      { name: "+N new agents", color: "#16a34a", values: stages.map((s) => s.num_new_agents), axis: "left" },
+      { name: "avg agents/task", color: "#7c3aed", values: stages.map((s) => s.agents_per_task?.mean ?? null), axis: "right" },
+      { name: "avg tools/task", color: "#f59e0b", values: stages.map((s) => s.tools_per_task?.mean ?? null), axis: "right" },
+    ];
+    const lMax = Math.max(1, ...series.filter((s) => s.axis === "left").flatMap((s) => s.values).filter((v) => v != null));
+    const rMax = Math.max(1, ...series.filter((s) => s.axis === "right").flatMap((s) => s.values).filter((v) => v != null));
+    const yL = (v) => padT + (H - padT - padB) * (1 - v / lMax);
+    const yR = (v) => padT + (H - padT - padB) * (1 - v / rMax);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "evo-svg");
+    svg.style.width = "100%"; svg.style.maxWidth = "100%"; svg.style.height = `${H}px`;
+    svg.appendChild(mkSvgLine(padL, padT, padL, H - padB, "#cbd5e1"));
+    svg.appendChild(mkSvgLine(W - padR, padT, W - padR, H - padB, "#cbd5e1"));
+    svg.appendChild(mkSvgLine(padL, H - padB, W - padR, H - padB, "#cbd5e1"));
+    stages.forEach((s, i) => svg.appendChild(mkSvgText(xs[i], H - padB + 18, s.name || `V${i + 1}`, "#64748b", "middle")));
+    for (let k = 0; k <= 4; k++) {
+      const v = Math.round((lMax * k) / 4), y = yL(v);
+      svg.appendChild(mkSvgText(padL - 6, y + 3, String(v), "#64748b", "end", 10));
+      svg.appendChild(mkSvgLine(padL, y, W - padR, y, "rgba(15,23,42,0.07)"));
+    }
+    for (let k = 0; k <= 4; k++) {
+      const v = ((rMax * k) / 4).toFixed(1);
+      svg.appendChild(mkSvgText(W - padR + 6, yR(parseFloat(v)) + 3, v, "#64748b", "start", 10));
+    }
+    series.forEach((ser) => {
+      const yFn = ser.axis === "left" ? yL : yR; let prev = null;
+      ser.values.forEach((v, i) => {
+        if (v == null) { prev = null; return; }
+        const cx = xs[i], cy = yFn(v);
+        if (prev) svg.appendChild(mkSvgLine(prev.x, prev.y, cx, cy, ser.color, 2));
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", 3.5); c.setAttribute("fill", ser.color);
+        svg.appendChild(c);
+        svg.appendChild(mkSvgText(cx, cy - 8, Number.isInteger(v) ? String(v) : v.toFixed(1), ser.color, "middle", 10));
+        prev = { x: cx, y: cy };
+      });
+    });
+    const legend = el("div", { class: "evo-legend" });
+    series.forEach((ser) => legend.appendChild(el("span", { class: "legend-item" }, [
+      el("span", { class: "legend-dot", style: `background:${ser.color}` }, ""),
+      `${ser.name} (${ser.axis === "left" ? "left" : "right"} axis)`,
+    ])));
+    wrap.appendChild(svg); wrap.appendChild(legend);
+    return wrap;
+  }
+
+  function agdsAgentTimeline(evo) {
+    const wrap = el("div", { class: "evo-timeline card" });
+    const rows = evo.agent_timeline || [];
+    wrap.appendChild(el("h3", { class: "evo-section-title" },
+      `Agent pool timeline — when each agent joined (${rows.length} agents, ${evo.num_stages} versions)`));
+    if (!rows.length) { wrap.appendChild(el("div", { class: "muted" }, "No agents.")); return wrap; }
+    const stages = evo.stages || [];
+    const table = el("table", { class: "evo-timeline-table" });
+    const hr = el("tr");
+    hr.appendChild(el("th", { class: "tool-col" }, "Agent"));
+    stages.forEach((s) => hr.appendChild(el("th", {}, s.name || "")));
+    hr.appendChild(el("th", {}, "Intro"));
+    table.appendChild(el("thead", {}, [hr]));
+    const tbody = el("tbody");
+    rows.forEach((row) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", { class: "tool-name", title: row.agent }, row.name || row.agent));
+      row.presence.forEach((p) => {
+        const td = el("td", { class: `cell cell-${p}` });
+        td.title = `${row.name || row.agent} · ${p}`;
+        td.textContent = p === "new" ? "●" : p === "present" ? "▪" : "";
+        tr.appendChild(td);
+      });
+      tr.appendChild(el("td", { class: "intro-cell" }, stages[row.intro_stage]?.name || `V${row.intro_stage + 1}`));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    wrap.appendChild(el("div", { class: "evo-legend" }, [
+      el("span", { class: "legend-item" }, [el("span", { class: "swatch swatch-new" }, ""), "newly introduced"]),
+      el("span", { class: "legend-item" }, [el("span", { class: "swatch swatch-present" }, ""), "present"]),
+      el("span", { class: "legend-item" }, [el("span", { class: "swatch swatch-absent" }, ""), "absent"]),
+    ]));
+    return wrap;
+  }
+
+  // ===== REAL-WORLD FIT ====================================================
+  function renderRealworld(root, data) {
+    root.innerHTML = "";
+    const ms = data.match_summary || {};
+    const real = ms.real || null;
+    const sims = ms.simulated || [];
+    root.appendChild(el("div", { class: "rw-header" }, [
+      el("h2", { class: "rw-title" }, "Does our evolving agent population look like the real world?"),
+      el("p", { class: "muted rw-subtitle" },
+        "We compare each simulated domain's agent population against the Org62 production trace " +
+        "(3.7K agents over a 7.3K-tool universe). Tools per agent, how much agents' tool scopes overlap " +
+        "(Jaccard), and the tool-use heavy-tail (Zipf α / Gini) sit in the same regime — evidence our " +
+        "synthetic agent set is a faithful microcosm of a real one."),
+    ]));
+
+    if (real && sims.length) root.appendChild(agdsRealStatsTable(real, sims));
+
+    const figs = data.figures || [];
+    if (figs.length) {
+      const grid = el("div", { class: "rw-fig-grid" });
+      const CAPS = {
+        "rank_frequency.png": ["Tool-use rank-frequency (log–log)", "How often each tool is used across agents vs its rank — the heavy-tail / Zipf law shared by real and simulated populations."],
+        "tools_per_agent.png": ["Tools per agent", "Distribution of how many tools each agent's derived scope contains."],
+        "agent_overlap.png": ["Agent scope overlap", "Pairwise tool-scope similarity (Jaccard) between agents."],
+        "agent_emergence.png": ["Agent emergence", "How the cumulative agent population grows as more intents/tasks are seen."],
+        "match_table.png": ["Summary match table", "Side-by-side of the key structural statistics."],
+      };
+      const order = ["rank_frequency.png", "tools_per_agent.png", "agent_overlap.png", "agent_emergence.png", "match_table.png"];
+      order.filter((f) => figs.includes(f)).concat(figs.filter((f) => !order.includes(f))).forEach((fig) => {
+        const cap = CAPS[fig] || [fig, ""];
+        grid.appendChild(el("figure", { class: "rw-fig card" }, [
+          el("figcaption", { class: "rw-fig-cap" }, [
+            el("strong", {}, cap[0]),
+            cap[1] ? el("p", { class: "muted small" }, cap[1]) : null,
+          ]),
+          el("img", {
+            class: "skds-rw-img",
+            src: `/api/agent-datasets/realworld_comparison/image?name=${encodeURIComponent(fig)}`,
+            alt: cap[0], loading: "lazy",
+          }),
+        ]));
+      });
+      root.appendChild(grid);
+    }
+  }
+
+  function agdsRealStatsTable(real, sims) {
+    const metrics = [
+      ["n_agents", "agents", 0],
+      ["n_tool_universe", "tool universe", 0],
+      ["tools_per_agent_mean", "tools / agent (mean)", 2],
+      ["tools_per_agent_median", "tools / agent (median)", 1],
+      ["single_tool_agent_frac", "single-tool agents", 2],
+      ["agents_per_tool_mean", "agents / tool (mean)", 2],
+      ["mean_jaccard", "scope overlap (Jaccard)", 3],
+      ["zipf_alpha", "tool-use Zipf α", 2],
+      ["gini_tool_freq", "tool-use Gini", 2],
+    ];
+    const card = el("div", { class: "card skds-rw-stats" });
+    card.appendChild(el("h3", { class: "evo-section-title" }, "Structural fingerprints — Org62 (real) vs simulated domains"));
+    const table = el("table", { class: "rw-stats-table" });
+    const hr = el("tr");
+    hr.appendChild(el("th", {}, "metric"));
+    hr.appendChild(el("th", { class: "rw-real-col" }, real.name || "Org62 (real)"));
+    sims.forEach((s) => hr.appendChild(el("th", {}, s.name)));
+    table.appendChild(el("thead", {}, [hr]));
+    const tbody = el("tbody");
+    metrics.forEach(([key, label, dp]) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", { class: "rw-metric-name" }, label));
+      const rv = real[key];
+      tr.appendChild(el("td", { class: "rw-real-col" }, rv == null ? "—" : num(rv, dp)));
+      sims.forEach((s) => tr.appendChild(el("td", {}, s[key] == null ? "—" : num(s[key], dp))));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    card.appendChild(table);
+    return card;
+  }
+
+  // ===== TASK BROWSER ======================================================
+  function renderStages() {
+    const root = $("#agds-stages");
+    root.innerHTML = "";
+    const sum = st.sum.data;
+    if (!sum) { root.appendChild(el("div", { class: "muted" }, "No summary.")); return; }
+    root.appendChild(el("div", { class: "section-header" }, [
+      el("div", { class: "title" }, sum.domain),
+      el("div", { class: "sub" }, `${sum.n_tasks_total ?? "?"} tasks · ${sum.n_versions ?? "?"} versions · ${sum.n_agents_total ?? "?"} agents`),
+    ]));
+    (sum.stages || []).forEach((s) => {
+      root.appendChild(el("div", { class: "stage-pill" }, [
+        el("span", { class: "lbl" }, `V${s.version}`),
+        el("span", { class: "meta" }, `agents=${s.num_cumulative_agents} (+${s.num_new_agents}) · adapt=${s.n_train} · test=${s.n_test} · multi=${s.n_multi_agent}`),
+      ]));
+    });
+  }
+
+  function renderTaskList() {
+    const filter = ($("#agds-filter").value || "").toLowerCase();
+    const list = $("#agds-task-list");
+    list.innerHTML = "";
+    const filtered = st.tasks.filter((t) => !filter || (t.task_id && t.task_id.toLowerCase().includes(filter)));
+    $("#agds-task-count").textContent = `${filtered.length} / ${st.tasks.length} tasks`;
+    for (const t of filtered) {
+      const li = el("li", { onclick: () => openTask(t) }, [
+        el("span", { class: `badge stage-${t.stage}` }, `V${t.version}`),
+        el("span", { class: "skds-li-split" }, t.split),
+        el("span", {}, t.task_id),
+        t.multi_agent ? el("span", { class: "agds-li-multi", title: `${t.n_oracle_agents} agents · coordination` }, `${t.n_oracle_agents}×`) : null,
+        el("span", { class: "skds-li-n", title: `${t.n_oracle_agents} oracle agents` }, `${t.n_oracle_agents} ag`),
+      ]);
+      li.dataset.tid = `${t.version}/${t.split}/${t.task_id}`;
+      list.appendChild(li);
+    }
+  }
+
+  async function openTask(t) {
+    $$("#agds-task-list li").forEach((li) =>
+      li.classList.toggle("active", li.dataset.tid === `${t.version}/${t.split}/${t.task_id}`));
+    const detail = $("#agds-detail");
+    detail.innerHTML = `<div class="empty">Loading…</div>`;
+    st.detailVersion = t.version;
+    const url = new URL(`/api/agent-datasets/${st.domain}/task`, location.origin);
+    url.searchParams.set("version", String(t.version));
+    url.searchParams.set("split", t.split);
+    url.searchParams.set("task_id", t.task_id);
+    try {
+      const cfg = await fetchJson(url);
+      if (cfg.error) { detail.innerHTML = `<div class="empty error">${escapeHtml(cfg.error)}</div>`; return; }
+      renderTaskDetail(detail, cfg);
+    } catch (e) {
+      detail.innerHTML = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+    }
+  }
+
+  // An oracle-agent card whose body lazily loads the FULL agent (generated TOML
+  // spec + the SKILL.md/references it wraps) the first time it is expanded.
+  function agdsAgentCard(a) {
+    const det = el("details", { class: "skds-skill-full" }, [
+      el("summary", {}, "Full agent spec (TOML) & wrapped skill"),
+      el("div", { class: "skds-skill-full-body" }, [el("div", { class: "muted small" }, "Loading…")]),
+    ]);
+    let loaded = false;
+    det.addEventListener("toggle", async () => {
+      if (!det.open || loaded) return;
+      loaded = true;
+      const body = det.querySelector(".skds-skill-full-body");
+      try {
+        const url = new URL(`/api/agent-datasets/${st.domain}/agent`, location.origin);
+        url.searchParams.set("name", a.name);
+        if (st.detailVersion != null) url.searchParams.set("version", String(st.detailVersion));
+        renderAgentFull(body, await fetchJson(url));
+      } catch (e) {
+        loaded = false;
+        body.innerHTML = `<div class="empty error">${escapeHtml(e.message || String(e))}</div>`;
+      }
+    });
+    return el("div", { class: "skds-skill-item" }, [
+      el("div", { class: "skds-skill-name" }, [
+        el("span", {}, a.title || a.name),
+        a.n_tools != null ? el("span", { class: "agds-tool-badge", title: "derived tool-scope size" }, `${a.n_tools} tools`) : null,
+      ]),
+      el("code", { class: "skds-skill-slug" }, a.name),
+      a.description ? el("div", { class: "muted small" }, a.description) : null,
+      det,
+    ]);
+  }
+
+  function renderAgentFull(root, full) {
+    root.innerHTML = "";
+    if (full.error) { root.appendChild(el("div", { class: "empty error" }, full.error)); return; }
+    root.appendChild(el("div", { class: "agds-agent-meta" }, [
+      el("span", { class: "chip" }, `skill: ${full.source_slug || "—"}`),
+      el("span", { class: "chip" }, `model: ${full.model || "(inherit)"}`),
+      el("span", { class: "chip" }, `versions: ${(full.in_versions || []).map((v) => "V" + v).join(", ") || "—"}`),
+    ]));
+    // derived tool scope
+    const tools = full.oracle_tools || [];
+    root.appendChild(el("div", { class: "skds-file-h" }, `derived tool scope (${tools.length})`));
+    root.appendChild(el("div", { class: "chip-row" }, tools.length
+      ? tools.map((tn) => el("span", { class: "tag tool" }, tn))
+      : [el("span", { class: "muted" }, "—")]));
+    // the generated agent spec
+    root.appendChild(el("div", { class: "skds-file-h" }, `${full.name}.toml`));
+    root.appendChild(el("pre", { class: "skds-file-pre" }, full.toml || "(empty)"));
+    // the wrapped skill (SKILL.md + references)
+    const sk = full.skill || {};
+    root.appendChild(el("div", { class: "skds-file-h" }, `wrapped skill — ${sk.slug || ""}/SKILL.md`));
+    root.appendChild(el("pre", { class: "skds-file-pre" }, sk.body || "(empty)"));
+    const refs = sk.references || [];
+    if (refs.length) {
+      root.appendChild(el("div", { class: "skds-file-h" }, `references/ (${refs.length})`));
+      refs.forEach((r, i) => {
+        const tag = r.truncated ? "  (truncated)" : r.binary ? `  (binary · ${r.size} B)` : "";
+        root.appendChild(el("details", { class: "skds-ref", open: i === 0 ? "" : null }, [
+          el("summary", {}, `${r.name}${tag}`),
+          r.content != null
+            ? el("pre", { class: "skds-file-pre" }, r.content)
+            : el("div", { class: "muted small" }, "binary or unreadable file"),
+        ]));
+      });
+    }
+    if ((sk.other_files || []).length) {
+      root.appendChild(el("div", { class: "skds-file-h" }, "other files in skill dir"));
+      root.appendChild(el("div", { class: "chip-row" }, sk.other_files.map((f) => el("span", { class: "chip" }, f))));
+    }
+  }
+
+  function renderTaskDetail(root, cfg) {
+    root.innerHTML = "";
+    root.appendChild(el("div", { class: "detail-section" }, [
+      el("h2", {}, cfg.task_id),
+      el("div", { class: "muted" }, `${cfg.domain} · V${cfg.version} · ${cfg.split}`),
+    ]));
+
+    if (cfg.user_prompt) {
+      root.appendChild(el("div", { class: "detail-section" }, [
+        el("h3", {}, "User prompt"),
+        el("div", { class: "skds-prompt" }, cfg.user_prompt),
+      ]));
+    }
+
+    // Oracle agents (the lead must delegate to these) — expandable to full spec
+    const oa = cfg.oracle_agents || [];
+    root.appendChild(el("div", { class: "detail-section" }, [
+      el("h3", {}, `Oracle agents · delegate to (${oa.length})${oa.length > 1 ? " · multi-agent" : ""}`),
+      el("div", { class: "skds-skill-list" }, oa.length
+        ? oa.map((a) => agdsAgentCard(a))
+        : [el("span", { class: "muted" }, "—")]),
+    ]));
+
+    // Cumulative agent pool mounted at this version (context + distractors)
+    const cum = cfg.cumulative_agents || [];
+    if (cum.length) {
+      root.appendChild(el("div", { class: "detail-section" }, [
+        el("h3", {}, `Agent pool mounted at V${cfg.version} (${cum.length})`),
+        el("div", { class: "chip-row" }, cum.map((a) =>
+          el("span", { class: "chip" + (oa.some((o) => o.name === a.name) ? " chip-new" : ""), title: a.name }, a.title || a.name))),
+      ]));
+    }
+
+    // Oracle skills behind the agents
+    const osk = cfg.oracle_skills || [];
+    if (osk.length) {
+      root.appendChild(el("div", { class: "detail-section" }, [
+        el("h3", {}, `Oracle skills (${osk.length})`),
+        el("div", { class: "chip-row" }, osk.map((s) => el("span", { class: "chip", title: s }, s))),
+      ]));
+    }
+
+    // Oracle tools (split across the agents above)
+    const tools = cfg.selected_tools || [];
+    if (tools.length) {
+      const sec = el("div", { class: "detail-section" }, [el("h3", {}, `Oracle tools · split across agents (${tools.length})`)]);
+      const wrap = el("div", {});
+      tools.forEach((tn) => wrap.appendChild(el("span", { class: "tag tool" }, tn)));
+      sec.appendChild(wrap);
+      root.appendChild(sec);
+    }
+
+    // Verifiers
+    const verifiers = cfg.verifiers || [];
+    if (verifiers.length) {
+      const sec = el("div", { class: "detail-section" }, [el("h3", {}, `Verifiers (${verifiers.length})`)]);
+      const tbl = el("table", { class: "verif" });
+      tbl.appendChild(el("thead", {}, [el("tr", {}, [
+        el("th", {}, "#"), el("th", {}, "Name"), el("th", {}, "Type"),
+        el("th", {}, "Expected"), el("th", {}, "Compare"), el("th", {}, "Query / Config"),
+      ])]));
+      const tbody = el("tbody", {});
+      verifiers.forEach((v, i) => {
+        const vc = v.validation_config || {};
+        tbody.appendChild(el("tr", {}, [
+          el("td", {}, String(i + 1)),
+          el("td", {}, v.name || ""),
+          el("td", {}, v.verifier_type || ""),
+          el("td", {}, vc.expected_value != null ? JSON.stringify(vc.expected_value) : ""),
+          el("td", {}, vc.comparison_type || ""),
+          el("td", { class: "query" }, vc.query || JSON.stringify(vc, null, 2)),
+        ]));
+      });
+      tbl.appendChild(tbody);
+      sec.appendChild(tbl);
+      root.appendChild(sec);
+    }
+
+    if (cfg.gym_servers_config && cfg.gym_servers_config.length) {
+      root.appendChild(el("details", { class: "collapse" }, [
+        el("summary", {}, "Gym servers config"),
+        el("pre", { class: "collapse-body" }, JSON.stringify(cfg.gym_servers_config, null, 2)),
+      ]));
+    }
+    if (cfg.system_prompt) {
+      root.appendChild(el("details", { class: "collapse" }, [
+        el("summary", {}, "Shared policy (system prompt)"),
+        el("pre", { class: "collapse-body" }, cfg.system_prompt),
+      ]));
+    }
+  }
+
+  return { onShow };
+})();
+
+// ---------------------------------------------------------------------------
+// Landing — dataset-building animation  (P2 of the 3-page landing)
+// ---------------------------------------------------------------------------
+// One seed dataset (EnterpriseOps-Gym) is sliced by usage *frequency* into
+// evolving versions T1->T2->T3. The same seed feeds three evolving axes; each
+// track shows the *fixed set at Ti* (carried-forward chips) plus the *new*
+// resource (red, pulsing) that expands it at Ti+1. Pure-CSS keyframes drive
+// the build animation; this module only renders the three track panels and
+// swaps which one is visible (a hidden panel's animation restarts when shown).
+const DB = (() => {
+  const ORDER = ["tools", "skills", "agents"];
+  const TRACKS = {
+    tools: {
+      label: "Tools",
+      blurb: "Deterministic build, no LLM: rank tools by <b>how many tasks use them</b>, grow nested versions T<sub>1</sub> &sub; T<sub>2</sub> &sub; T<sub>3</sub>, then place each task at the <b>earliest version that covers all its tools</b>.",
+      seedNote: "one domain &rarr; many tasks &middot; each task wires several tools",
+      benchNote: 'fixed tool set at T<sub>i</sub> &middot; a <b class="db-ink">new tool</b> expands it at T<sub>i+1</sub>',
+      chipKind: "tool",
+      feats: [
+        "Every task uses <b>&ge;1 new tool</b> plus at least one carried-forward tool.",
+        "Versions T<sub>i</sub> are cut from the seed by tool-usage <b>frequency</b>.",
+      ],
+    },
+    skills: {
+      label: "Skills",
+      blurb: "Deterministic build, no LLM: the system-prompt <b>policy is split into hidden oracle skills</b>, ordered by <b>task coverage</b> (not frequency), and grown into versions S<sub>1</sub> &sub; S<sub>2</sub> &sub; S<sub>3</sub> &mdash; the agent must <b>author</b> the right skills as new policy areas appear.",
+      seedNote: "skills are hidden from the system prompt &middot; oracle tools are given to isolate the effect",
+      benchNote: 'tasks at T<sub>i</sub> need a <b class="db-ink">skill new at that version</b> &middot; older skills optional',
+      chipKind: "skill",
+      feats: [
+        "Skills are <b>latent</b>: needed to solve the task but never shown.",
+        "Oracle tools are provided, so we measure the <b>skill</b>, not tool discovery.",
+        "Each task requires a skill <b>new at its time step</b>.",
+      ],
+    },
+    agents: {
+      label: "Agents",
+      blurb: "Deterministic build (no LLM): each oracle <b>skill becomes one tool-scoped agent</b> (#agents = #skills). Tools are <b>split</b> across agents so a task needs <b>&ge;2</b>, and the given pool <b>accumulates</b> across versions — we test how well a lead agent <b>delegates</b>.",
+      seedNote: "each skill becomes one agent &middot; an agent bundles tools &middot; skills &middot; instructions &middot; model &middot; context",
+      benchNote: 'fixed agent set at T<sub>i</sub> &middot; a <b class="db-ink">new agent</b> expands it at T<sub>i+1</sub>',
+      chipKind: "agent",
+      feats: [
+        "Each agent is built from a skill &rarr; <b>#skills = #agents</b>.",
+        "Agents are given; we test the lead agent's <b>delegation</b>.",
+        "Every task uses <b>&ge;1 agent new at its version</b>.",
+      ],
+    },
+  };
+
+  let mounted = false;
+  let active = "tools";
+
+  // ----- Tools track: a precise, animated walk-through of the frequency split.
+  // A tiny worked example (a calendar-like domain) instantiates the real
+  // algorithm from evolve_tools/src/frequency_config.py so a first-time reader
+  // can see EXACTLY how tasks are sliced into versions by tool-usage frequency:
+  //   (1) every task carries the set of tools it needs;
+  //   (2) pool all tools, rank by how many tasks use each (core -> long tail);
+  //   (3) grow nested catalogs T1 c T2 c T3 (add the next-most-frequent tools);
+  //   (4) assign every task to the EARLIEST version that covers all its tools.
+  const TC = {
+    create_event: "#2563eb",
+    list_events:  "#0ea5e9",
+    find_slot:    "#6366f1",
+    send_invite:  "#d97706",
+    delete_event: "#dc2626",
+  };
+  // Tools sorted by descending task-frequency (ties alphabetical) == rank order.
+  // `ver` = the version (0-based) that first introduces the tool.
+  const T_TOOLS = [
+    { id: "create_event", freq: 5, ver: 0 },
+    { id: "list_events",  freq: 3, ver: 0 },
+    { id: "find_slot",    freq: 2, ver: 1 },
+    { id: "send_invite",  freq: 2, ver: 1 },
+    { id: "delete_event", freq: 1, ver: 2 },
+  ];
+  // Each task's oracle tool set. `ver` = earliest version that covers all of
+  // its tools (so >=1 of them is new at `ver`; the rest are carried-forward).
+  const T_TASKS = [
+    { id: "A", tools: ["create_event", "list_events"], ver: 0 },
+    { id: "B", tools: ["create_event", "list_events", "send_invite"], ver: 1 },
+    { id: "C", tools: ["create_event", "find_slot"], ver: 1 },
+    { id: "D", tools: ["create_event", "list_events", "find_slot"], ver: 1 },
+    { id: "E", tools: ["create_event", "send_invite", "delete_event"], ver: 2 },
+  ];
+  const T_VERS = [
+    { tag: "T₁", delta: ["create_event", "list_events"] },
+    { tag: "T₂", delta: ["find_slot", "send_invite"] },
+    { tag: "T₃", delta: ["delete_event"] },
+  ];
+  // version each tool is introduced at — used to label a task's tools new/old.
+  const T_TOOLVER = Object.fromEntries(T_TOOLS.map((t) => [t.id, t.ver]));
+  const T_STEPS = [
+    "tasks need tools",
+    "rank by frequency",
+    "cut cumulative versions",
+    "assign to earliest version",
+  ];
+  const T_CAPS = [
+    "Start from the seed: every task carries the <b>set of tools</b> it needs to be solved.",
+    "Pool all tools and count <b>how many tasks use each</b>, then rank them most-used &rarr; long tail (ties broken alphabetically).",
+    "Grow a nested chain <b>T₁ &sub; T₂ &sub; T₃</b> by adding the next-most-frequent tools — but <b>where to cut</b> is set by the <b>min_new_tasks</b> floor: <b>T₁ is the smallest prefix that makes ≥ N tasks solvable</b> (here N=1 — the top-2 tools first make a whole task, Task A, solvable), then each later version grows until <b>≥ N new</b> tasks clear.",
+    "Place each task at the <b>earliest version</b> that covers <b>all</b> its tools — now read off the guarantee: each task has <b>≥1 new</b> tool (new at its version) and, from T₂ on, also <b>≥1 old</b> carried-forward tool.",
+  ];
+  // What the construction guarantees (from the dataset card + environment.py).
+  const T_FEATS = [
+    "<b>Every task uses ≥1 new tool</b> (the one new at its version) — and from <b>T₂ onward</b> also <b>≥1 old tool</b> carried forward, so each version tests mixing new APIs with known ones.",
+    "<b>Tools only accumulate</b>: T₁ &sub; T₂ &sub; T₃ — nothing is ever removed, and the tools added each version are the most-frequent of what remains.",
+    "<b>Every new tool is exercised</b> at the version it appears, and per-task difficulty (|tools|) is balanced across versions so a version's effect isolates tool novelty.",
+    "<b>Cuts are principled, not arbitrary</b>: each version is the <b>smallest frequency-prefix</b> that clears the <b>min_new_tasks</b> floor (≥ N newly-solvable tasks). In the real benchmark N=7, first met at the <b>top-40</b> tools ⟹ <b>C₁ = 40</b> — the smallest first version that can host 7 whole composite tasks.",
+  ];
+
+  function tchip(id, opts) {
+    opts = opts || {};
+    const c = TC[id] || "var(--accent)";
+    const cls = "dbt-tool" + (opts.muted ? " is-muted" : "");
+    const n = opts.count != null
+      ? `<b class="dbt-tool-n">&times;${opts.count}</b>` : "";
+    return `<span class="${cls}" style="--tc:${c}">${id}${n}</span>`;
+  }
+  // Tool chip tagged new/old relative to a task's assigned version. `old`
+  // (carried-forward) chips are muted just like in step 3; `new` chips keep
+  // the tool colour — so the new+old guarantee is readable at a glance.
+  function tchipNO(id, isOld) {
+    const c = TC[id] || "var(--accent)";
+    return `<span class="dbt-tool${isOld ? " is-muted" : ""}" style="--tc:${c}">${id}` +
+      `<b class="dbt-flag dbt-flag--${isOld ? "old" : "new"}">${isOld ? "old" : "new"}</b></span>`;
+  }
+
+  function toolsPanelHTML() {
+    const maxF = Math.max.apply(null, T_TOOLS.map((t) => t.freq));
+
+    const p1 = `<div class="dbt-phase dbt-p1"><div class="dbt-tasklist">${
+      T_TASKS.map((t) =>
+        `<div class="dbt-task"><span class="dbt-task-tag">Task ${t.id}</span>` +
+        `<span class="dbt-task-tools">${t.tools.map((id) => tchip(id)).join("")}</span></div>`
+      ).join("")
+    }</div></div>`;
+
+    const p2 = `<div class="dbt-phase dbt-p2"><div class="dbt-rank">${
+      T_TOOLS.map((t) =>
+        `<div class="dbt-rankrow">` +
+        `<span class="dbt-rank-name" style="--tc:${TC[t.id]}">${t.id}</span>` +
+        `<span class="dbt-rank-track"><span class="dbt-rank-bar" style="--tc:${TC[t.id]};--w:${Math.round(t.freq / maxF * 100)}%"></span></span>` +
+        `<span class="dbt-rank-cnt">${t.freq} task${t.freq > 1 ? "s" : ""}</span>` +
+        `</div>`
+      ).join("")
+    }</div><div class="dbt-rank-axis"><span>core &middot; most-used</span><span>long tail</span></div></div>`;
+
+    // phase 3 — cut cumulative versions. WHERE each version stops is set by the
+    // min_new_tasks FLOOR: V1 = the smallest frequency-prefix that makes >= N
+    // tasks SOLVABLE (all of a task's tools present); each later version then
+    // grows the prefix until >= N NEW tasks become solvable. Toy floor N=1; the
+    // real benchmark uses min_new_tasks_per_stage = 7 (-> C1 = 40 tools).
+    const p3seen = new Set();
+    const p3rows = T_VERS.map((v, k) => {
+      const cum = T_TOOLS.filter((t) => t.ver <= k);
+      const have = new Set(cum.map((t) => t.id));
+      const solv = T_TASKS.filter((t) => t.tools.every((x) => have.has(x)));
+      const fresh = solv.filter((t) => !p3seen.has(t.id));
+      solv.forEach((t) => p3seen.add(t.id));
+      const freshChips = fresh.length
+        ? fresh.map((t) => `<i class="dbt-solv-chip">Task ${t.id}</i>`).join("")
+        : `<i class="dbt-solv-chip is-none">none</i>`;
+      const badge = k === 0
+        ? `<span class="dbt-cut-badge dbt-cut-badge--floor">${solv.length} &ge; floor (N=1) &rarr; smallest first version</span>`
+        : `<span class="dbt-cut-badge">+${fresh.length} new &middot; ${solv.length}/${T_TASKS.length} solvable</span>`;
+      const main = `<div class="dbt-cat"><span class="dbt-cat-tag">${v.tag}</span>` +
+        `<span class="dbt-cat-tools">${cum.map((t) => tchip(t.id, { muted: t.ver < k })).join("")}</span>` +
+        `<span class="dbt-cat-delta">${k === 0 ? "core catalog" : "+ " + v.delta.join(", ")}</span></div>`;
+      const sub = `<div class="dbt-cut-sub"><span class="dbt-cut-arrow">&#8627;</span> newly solvable: ${freshChips} ${badge}</div>`;
+      return `<div class="dbt-cutrow">${main}${sub}</div>`;
+    }).join("");
+    const p3 = `<div class="dbt-phase dbt-p3">` +
+      `<div class="dbt-rulebar">Where to <b>cut</b> each version is set by the <b>min_new_tasks</b> floor: <b>V₁ is the smallest frequency-prefix that makes ≥ N tasks solvable</b>, and every later version grows the prefix until <b>≥ N new</b> tasks become solvable. <i>(toy floor N=1)</i></div>` +
+      `<div class="dbt-cats dbt-cats--cut">${p3rows}</div>` +
+      `<div class="dbt-foot">Can't cut smaller — the <b>top-1</b> prefix <code>{create_event}</code> leaves <b>0</b> solvable tasks, below the floor. In the real benchmark the floor is <b>min_new_tasks = 7</b>, first reached only once the <b>top-40</b> tools are on &rArr; <b>C₁ = 40</b>: the smallest possible first version that can host 7 whole composite tasks.</div>` +
+      `</div>`;
+
+    const p4 = `<div class="dbt-phase dbt-p4"><div class="dbt-assign">${
+      T_VERS.map((v, k) => {
+        const inV = T_TASKS.filter((t) => t.ver === k);
+        return `<div class="dbt-asg-ver"><span class="dbt-asg-tag">${v.tag}</span><div class="dbt-asg-tasks">${
+          inV.map((t) => {
+            const chips = t.tools.map((id) => tchipNO(id, T_TOOLVER[id] < t.ver)).join("");
+            const nNew = t.tools.filter((id) => T_TOOLVER[id] === t.ver).length;
+            const nOld = t.tools.length - nNew;
+            const sum = nOld > 0 ? `${nNew} new + ${nOld} old` : `${nNew} new &middot; core`;
+            return `<div class="dbt-asg-task"><span class="dbt-asg-name">Task ${t.id}</span>` +
+              `<span class="dbt-asg-tools">${chips}</span>` +
+              `<span class="dbt-asg-sum">${sum}</span></div>`;
+          }).join("")
+        }</div></div>`;
+      }).join("")
+    }</div></div>`;
+
+    return `
+      <div class="db-panel${active === "tools" ? " is-active" : ""}" data-panel="tools">
+        <div class="dbt" data-phase="1">
+          <div class="dbt-bar">
+            <ol class="dbt-steps">${
+              T_STEPS.map((s, i) =>
+                `<li data-step="${i + 1}" role="button" tabindex="0" title="Click to study this step"><b>${i + 1}</b>${s}</li>`
+              ).join("")
+            }</ol>
+            <button class="dbt-play" type="button" data-playing="true" title="Pause" aria-label="Pause or play the walk-through"></button>
+          </div>
+          <div class="dbt-stage">${p1}${p2}${p3}${p4}</div>
+          <div class="dbt-caps">${
+            T_CAPS.map((c, i) => `<p data-cap="${i + 1}">${c}</p>`).join("")
+          }</div>
+          <div class="dbt-feats">
+            <span class="dbt-feats-k">Guarantee</span>
+            <ul>${T_FEATS.map((f) => `<li>${f}</li>`).join("")}</ul>
+          </div>
+          <!-- Entry point into the full built-dataset detail page (the former
+               top-nav "Benchmark" view): statistics, example tasks, and the
+               real-world-fit assessment. Routes to the #datasets view. -->
+          <button class="dbt-cta" type="button" data-tab="datasets">
+            <span class="dbt-cta-k">Deep dive</span>
+            <span class="dbt-cta-tx">
+              <b>Statistics, examples &amp; realistic assessment</b>
+              <i>How it's built · Evolution · Real-world fit · Task browser</i>
+            </span>
+            <span class="dbt-cta-arrow" aria-hidden="true">&rarr;</span>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // =====================================================================
+  // Skills track walk-through. DIFFERENT from tools — mirrors
+  // evovle_skills/builder (splitter + tagger + sequencer):
+  //   * skills are LATENT: the system-prompt policy is split into an oracle
+  //     skill library and HELD OUT; the agent starts empty and must author
+  //     its own skills (oracle TOOLS are given, to isolate the skill).
+  //   * a task is tagged to a skill from its VERIFIER signature, not tools.
+  //   * versions grow by SKILL COVERAGE (most-covered first), adding skills
+  //     until >= min-step-size NEW tasks become solvable (default 15) — NOT
+  //     a frequency size-schedule like tools.
+  //   * each task needs >=1 skill NEW at its version; OLD skills optional.
+  // The worked example below is internally consistent with that algorithm
+  // (coverage order == intro order; earliest-covering placement).
+  const SC = {
+    "employee-records": "#6366f1",
+    "leave-management": "#8b5cf6",
+    "payroll": "#0ea5e9",
+    "benefits": "#14b8a6",
+    "offboarding": "#d97706",
+    "compliance": "#dc2626",
+  };
+  const S_SKILLS = [ // sorted by descending task coverage == version intro order
+    { id: "employee-records", cov: 5, ver: 0 },
+    { id: "leave-management", cov: 4, ver: 0 },
+    { id: "benefits", cov: 3, ver: 1 },
+    { id: "payroll", cov: 3, ver: 1 },
+    { id: "offboarding", cov: 2, ver: 2 },
+    { id: "compliance", cov: 2, ver: 2 },
+  ];
+  const S_SKILLVER = Object.fromEntries(S_SKILLS.map((s) => [s.id, s.ver]));
+  const S_TASKS = [
+    { id: "A", skills: ["employee-records"], ver: 0 },
+    { id: "B", skills: ["employee-records", "leave-management"], ver: 0 },
+    { id: "C", skills: ["leave-management"], ver: 0 },
+    { id: "D", skills: ["employee-records", "payroll"], ver: 1 },
+    { id: "E", skills: ["leave-management", "benefits"], ver: 1 },
+    { id: "F", skills: ["employee-records", "payroll", "benefits"], ver: 1 },
+    { id: "G", skills: ["employee-records", "payroll", "offboarding"], ver: 2 },
+    { id: "H", skills: ["leave-management", "benefits", "compliance"], ver: 2 },
+    { id: "I", skills: ["offboarding", "compliance"], ver: 2 },
+  ];
+  const S_VERS = [
+    { tag: "T₁", delta: ["employee-records", "leave-management"] },
+    { tag: "T₂", delta: ["benefits", "payroll"] },
+    { tag: "T₃", delta: ["offboarding", "compliance"] },
+  ];
+  const S_STEPS = [
+    "hide policy &rarr; oracle skills",
+    "tag tasks &rarr; skills",
+    "order by coverage, grow versions",
+    "assign &middot; &ge;1 new skill",
+  ];
+  const S_CAPS = [
+    "A deterministic <b>title-keyword</b> rule (no LLM) routes each <b>§</b> three ways: the <b>behavioural contract</b> stays in the stripped prompt; <b>procedure</b> + <b>reference/authority</b> become <b>hidden oracle skills</b>; <b>glossaries</b> are dropped from the prompt and used only to build the tagging universe. Anything unrecognized <b>defaults to a skill</b> — so the keep/hide line is a heuristic, not a semantic judgement. (Oracle <b>tools are given</b>, to isolate the skill.)",
+    "Tagging is deterministic: parse a task's <b>verifier SQL</b> into a signature of <b>table.column</b> and <b>table.column = value</b> tokens, then match it against each skill's <b>index</b>. A table-qualified <b>value pair</b> is strong evidence (&times;3); a bare column is weak (&times;1) — tag when the score clears the bar, or on any pair hit. (Note `leave_request.status` vs `employee.status` — the table disambiguates.)",
+    "Sort skills by <b>task coverage</b>, then sweep them in that order; after each skill, count the tasks that <b>just became fully solvable</b>. The moment that count reaches <b>min-step-size</b>, <b>cut a version</b> — so <b>how many skills land in a T is derived</b> from when enough new tasks unlock, not chosen. Coverage-greedy, <b>not</b> a frequency schedule like tools.",
+    "Place each task at the <b>earliest version</b> covering all its skills — so every task needs <b>&ge;1 skill new at its version</b>, while <b>old skills are optional</b> (e.g. Task I lands at T₃ needing only new skills).",
+  ];
+  const S_FEATS = [
+    "<b>Skills are latent</b>: the policy is stripped from the prompt and held out as an answer key — the agent must <b>author</b> its own skills (skill.write) to solve tasks.",
+    "<b>Versions grow by coverage, not frequency</b>: skills are added most-covered-first until <b>&ge; min-step-size</b> new tasks become solvable (15 in the real build); cumulative S₁ &sub; S₂ &sub; S₃.",
+    "<b>Every task needs ≥1 new skill</b> (new at its version); <b>older skills are optional</b>. <b>Oracle tools are provided</b>, so the metric isolates skill generation — not tool discovery.",
+  ];
+
+  // Step 1 — how the splitter classifies each system-prompt section (by title
+  // keyword): Contract + Glossary are KEPT in the stripped prompt; Procedure +
+  // Reference are EXTRACTED as hidden skills.
+  const S_SECTIONS = [
+    { t: "General instructions", cls: "Contract", bin: "keep",
+      ex: "“Confirm before any destructive action; never expose another user’s PII.”" },
+    { t: "Operational constraints", cls: "Contract", bin: "keep",
+      ex: "“Act only within the caller’s region; return ≤ 50 rows per query.”" },
+    { t: "Employee records", cls: "Procedure", bin: "skill", skill: "employee-records",
+      ex: "“To onboard: insert employee, set status = active, assign a manager_id.”" },
+    { t: "Leave management", cls: "Procedure", bin: "skill", skill: "leave-management",
+      ex: "“Approve only if balance ≥ days requested, then set status = approved.”" },
+    { t: "Benefits enrollment", cls: "Procedure", bin: "skill", skill: "benefits",
+      ex: "“During the window, create an enrollment; set plan_tier from salary band.”" },
+    { t: "Payroll run", cls: "Procedure", bin: "skill", skill: "payroll",
+      ex: "“Lock timesheets, compute gross − deductions, then mark the run = posted.”" },
+    { t: "Offboarding", cls: "Procedure", bin: "skill", skill: "offboarding",
+      ex: "“Revoke access, set status = terminated, and schedule final pay.”" },
+    { t: "Compliance & access", cls: "Reference", bin: "skill", skill: "compliance",
+      ex: "“Only HR-Admin may edit compensation; managers have read-only access.”" },
+    { t: "Predefined lists / enums", cls: "Glossary", bin: "tag",
+      ex: "leave_request.status ∈ { pending, approved, rejected }" },
+  ];
+  // Step 2 — one worked verifier→signature→match example (the tagger weights a
+  // table-qualified (col=val) pair ×3 and a bare (table.col) ×1; tag if score≥3
+  // or any pair hit). Task C's verifier disambiguates `status` via its table.
+  const S_TAG_EX = {
+    task: "C",
+    sql: "SELECT COUNT(*) FROM leave_request\nWHERE status = 'approved';",
+    sig: [
+      { tok: "leave_request.status", kind: "col" },
+      { tok: "leave_request.status = approved", kind: "pair" },
+    ],
+    cand: [
+      { skill: "leave-management", idx: ["leave_request.status", "leave_request.status=approved"], score: "3", tag: true },
+      { skill: "employee-records", idx: ["employee.status", "employee.dept"], score: "0", tag: false },
+    ],
+  };
+  // Step 3 — illustrative min-step-size for the worked example (15 in the real build).
+  const S_THRESH = 3;
+
+  function schip(id, opts) {
+    opts = opts || {};
+    const c = SC[id] || "var(--accent-2)";
+    const n = opts.count != null ? `<b class="dbt-tool-n">&times;${opts.count}</b>` : "";
+    return `<span class="dbt-skill${opts.muted ? " is-muted" : ""}" style="--tc:${c}">${id}${n}</span>`;
+  }
+  function schipNO(id, isOld) {
+    const c = SC[id] || "var(--accent-2)";
+    return `<span class="dbt-skill${isOld ? " is-muted" : ""}" style="--tc:${c}">${id}` +
+      `<b class="dbt-flag dbt-flag--${isOld ? "old" : "new"}">${isOld ? "old" : "new"}</b></span>`;
+  }
+
+  // Replay the sequencer's greedy version-cut so the trace is faithful: walk
+  // skills in coverage order, add one at a time, count newly-solvable unplaced
+  // tasks, and cut a version once that count reaches `thresh`.
+  function computeGreedy(thresh) {
+    const order = S_SKILLS.map((s) => s.id);
+    const placed = new Set();
+    const cum = new Set();
+    const steps = [];
+    let verIdx = 0, skillsThisVer = 0;
+    order.forEach((sk, i) => {
+      cum.add(sk);
+      skillsThisVer += 1;
+      const elig = S_TASKS.filter((t) => !placed.has(t.id) && t.skills.every((x) => cum.has(x)));
+      const last = i === order.length - 1;
+      const step = { skill: sk, count: elig.length, cut: null };
+      if (elig.length >= thresh || last) {
+        elig.forEach((t) => placed.add(t.id));
+        verIdx += 1;
+        step.cut = { tag: (S_VERS[verIdx - 1] || {}).tag || ("T" + verIdx), nSkills: skillsThisVer, nTasks: elig.length };
+        skillsThisVer = 0;
+      }
+      steps.push(step);
+    });
+    return steps;
+  }
+
+  function skillsPanelHTML() {
+    // phase 1 — classify each § (by title) into KEEP (stripped prompt) vs HIDE
+    // (oracle skill), and say why.
+    const secRow = (s) => {
+      let right;
+      if (s.bin === "keep") right = `<span class="dbt-badge dbt-badge--keep">${s.cls}</span>`;
+      else if (s.bin === "skill") right = `<span class="dbt-badge dbt-badge--skill">${s.cls}</span><span class="dbt-sec-arrow">&rarr;</span>${schip(s.skill)}`;
+      else right = `<span class="dbt-badge dbt-badge--tag">${s.cls}</span>`;
+      return `<div class="dbt-sec"><div class="dbt-sec-top"><span class="dbt-sec-t">&sect; ${s.t}</span>${right}</div>` +
+        `<div class="dbt-sec-ex">${s.ex}</div></div>`;
+    };
+    const keptRows = S_SECTIONS.filter((s) => s.bin === "keep").map(secRow).join("");
+    const skillRows = S_SECTIONS.filter((s) => s.bin === "skill").map(secRow).join("");
+    const tagRows = S_SECTIONS.filter((s) => s.bin === "tag").map(secRow).join("");
+    // the bins are carved out of ONE document — the EOG system prompt — so show
+    // that source first, then split it.
+    const srcSecs = S_SECTIONS.map((s, i) =>
+      `<li><span class="dbt-src-num">&sect;${i + 1}</span> ${s.t}</li>`).join("");
+    const p1 = `<div class="dbt-phase dbt-p1">` +
+      `<figure class="dbt-src"><figcaption class="dbt-src-cap"><span class="db-cap-k">Source</span> EnterpriseOps-Gym — one <b>system prompt</b> (numbered policy sections)</figcaption>` +
+        `<div class="dbt-src-doc"><div class="dbt-src-title"># Operating policy</div><ol class="dbt-src-secs">${srcSecs}</ol></div></figure>` +
+      `<div class="dbt-splitar"><span class="dbt-splitar-line"></span>` +
+        `<span class="dbt-splitar-lab">A deterministic rule splits this prompt: <b>match each &sect;'s title</b> by keyword (no LLM, no content analysis) and route it <b>three ways</b> &darr;</span></div>` +
+      `<div class="dbt-route">` +
+        `<div class="dbt-route-l">` +
+          `<div class="dbt-bin dbt-bin--keep"><div class="dbt-bin-h"><span class="dbt-bin-k dbt-bin-k--keep">KEEP</span> Contract &rarr; stripped prompt (agent sees this)</div>${keptRows}</div>` +
+          `<div class="dbt-bin dbt-bin--tag dbt-drop"><div class="dbt-bin-h"><span class="dbt-bin-k dbt-bin-k--tag">DROP</span> Glossary &rarr; not shown to the agent; parsed only to build the verifier-tagging universe (step 2)</div>${tagRows}</div>` +
+        `</div>` +
+        `<div class="dbt-bin dbt-bin--skill"><div class="dbt-bin-h"><span class="dbt-bin-k dbt-bin-k--skill">HIDE</span> Procedure + Reference &rarr; oracle skills (held out)</div>${skillRows}</div>` +
+      `</div>` +
+      `<div class="dbt-foot">Because it's title-based, the line is <b>fuzzy</b>: an <i>Operational constraints</i> block is kept, yet <b>access-scope authority</b> becomes a skill — any constraint written <i>inside</i> a procedure rides along into that skill, and a title matching <b>no</b> rule <b>defaults to a skill</b>.</div>` +
+      `</div>`;
+
+    // phase 2 — HOW tagging works: parse a verifier's SQL into a signature and
+    // match it against each skill's index (pair = strong evidence).
+    const ex = S_TAG_EX;
+    const sigChips = ex.sig.map((s) =>
+      `<span class="dbt-sig dbt-sig--${s.kind}">${s.tok}<b>${s.kind === "pair" ? "pair &times;3" : "col &times;1"}</b></span>`
+    ).join("");
+    const candRows = ex.cand.map((c) =>
+      `<div class="dbt-cand${c.tag ? " is-tag" : ""}">${schip(c.skill)}` +
+      `<span class="dbt-cand-idx">${c.idx.map((x) => `<code>${x}</code>`).join("")}</span>` +
+      `<span class="dbt-cand-score">score ${c.score}</span>` +
+      `<span class="dbt-cand-mark">${c.tag ? "tag &check;" : "&times;"}</span></div>`
+    ).join("");
+    const how = `<div class="dbt-tag-how">` +
+      `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">1</span> Task ${ex.task} &mdash; the EOG <b>verifier SQL</b></div>` +
+        `<pre class="dbt-sql">${ex.sql.replace(/</g, "&lt;")}</pre></div>` +
+      `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">2</span> parse &rarr; <b>signature</b> (tables / cols / values)</div><div class="dbt-sigs">${sigChips}</div></div>` +
+      `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">3</span> match each skill's <b>index</b> <i>(table-qualified pair = strong)</i></div><div class="dbt-cands">${candRows}</div></div>` +
+      `<div class="dbt-tag-step dbt-tag-out"><div class="dbt-tag-h"><span class="dbt-tag-n">&rArr;</span> tag Task ${ex.task} &rarr; ${schip(ex.cand.find((c) => c.tag).skill)}</div></div>` +
+      `</div>`;
+    const res = `<div class="dbt-tag-res"><div class="dbt-tag-res-h">same parse + match for every task &rarr;</div>` +
+      `<div class="dbt-tasklist">${
+        S_TASKS.map((t) =>
+          `<div class="dbt-task"><span class="dbt-task-tag">Task ${t.id}</span>` +
+          `<span class="dbt-task-tools">${t.skills.map((id) => schip(id)).join("")}</span></div>`
+        ).join("")
+      }</div></div>`;
+    const p2 = `<div class="dbt-phase dbt-p2"><div class="dbt-tag">${how}${res}</div></div>`;
+
+    // phase 3 — order by coverage, then DERIVE versions: add skills until ≥ N
+    // new tasks become solvable, then cut.
+    const strip = S_SKILLS.map((s) => schip(s.id, { count: s.cov }))
+      .join('<span class="dbt-rank-sep">&rsaquo;</span>');
+    const trace = computeGreedy(S_THRESH).map((st) => {
+      const w = Math.min(100, Math.round((st.count / S_THRESH) * 100));
+      const cut = st.cut
+        ? `<span class="dbt-gcut">&#9986; cut &rarr; <b>${st.cut.tag}</b> = ${st.cut.nSkills} new skills, ${st.cut.nTasks} tasks</span>`
+        : "";
+      return `<div class="dbt-gstep${st.cut ? " is-cut" : ""}">` +
+        `<span class="dbt-gadd">+ ${schip(st.skill)}</span>` +
+        `<span class="dbt-gtrack"><i style="--w:${w}%"></i></span>` +
+        `<span class="dbt-gcount">${st.count}/${S_THRESH}</span>${cut}</div>`;
+    }).join("");
+    const p3 = `<div class="dbt-phase dbt-p3">` +
+      `<div class="dbt-rankstrip"><span class="dbt-rankstrip-lab">by coverage</span>${strip}</div>` +
+      `<div class="dbt-greedy"><div class="dbt-greedy-rule">Walk skills in coverage order; <b>cut a version</b> once <b>&ge; ${S_THRESH}</b> new tasks become solvable <i>(= min-step-size; <b>15</b> in the real build, ${S_THRESH} here)</i>. So a version's skill-count is <b>derived</b>, not chosen.</div>${trace}</div>` +
+      `</div>`;
+
+    // phase 4 — assign tasks to earliest version, labelling new vs old skills
+    const p4 = `<div class="dbt-phase dbt-p4"><div class="dbt-assign">${
+      S_VERS.map((v, k) => {
+        const inV = S_TASKS.filter((t) => t.ver === k);
+        return `<div class="dbt-asg-ver"><span class="dbt-asg-tag">${v.tag}</span><div class="dbt-asg-tasks">${
+          inV.map((t) => {
+            const chips = t.skills.map((id) => schipNO(id, S_SKILLVER[id] < t.ver)).join("");
+            const nNew = t.skills.filter((id) => S_SKILLVER[id] === t.ver).length;
+            const nOld = t.skills.length - nNew;
+            const sum = nOld > 0 ? `${nNew} new + ${nOld} old` : `${nNew} new &middot; no old`;
+            return `<div class="dbt-asg-task"><span class="dbt-asg-name">Task ${t.id}</span>` +
+              `<span class="dbt-asg-tools">${chips}</span>` +
+              `<span class="dbt-asg-sum">${sum}</span></div>`;
+          }).join("")
+        }</div></div>`;
+      }).join("")
+    }</div></div>`;
+
+    return `
+      <div class="db-panel${active === "skills" ? " is-active" : ""}" data-panel="skills">
+        <div class="dbt" data-phase="1">
+          <div class="dbt-bar">
+            <ol class="dbt-steps">${
+              S_STEPS.map((s, i) =>
+                `<li data-step="${i + 1}" role="button" tabindex="0" title="Click to study this step"><b>${i + 1}</b>${s}</li>`
+              ).join("")
+            }</ol>
+            <button class="dbt-play" type="button" data-playing="true" title="Pause" aria-label="Pause or play the walk-through"></button>
+          </div>
+          <div class="dbt-stage">${p1}${p2}${p3}${p4}</div>
+          <div class="dbt-caps">${
+            S_CAPS.map((c, i) => `<p data-cap="${i + 1}">${c}</p>`).join("")
+          }</div>
+          <div class="dbt-feats">
+            <span class="dbt-feats-k">Guarantee</span>
+            <ul>${S_FEATS.map((f) => `<li>${f}</li>`).join("")}</ul>
+          </div>
+          <!-- Entry point into the full skill-benchmark detail page. Routes to
+               the #skill-datasets view (/skills/benchmark): the 4-tab dataset
+               explorer (How it's built / Evolution / Real-world fit / Browser). -->
+          <button class="dbt-cta" type="button" data-tab="skill-datasets">
+            <span class="dbt-cta-k">Deep dive</span>
+            <span class="dbt-cta-tx">
+              <b>Statistics, examples &amp; realistic assessment</b>
+              <i>How it's built · Evolution · Real-world fit · Task browser</i>
+            </span>
+            <span class="dbt-cta-arrow" aria-hidden="true">&rarr;</span>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // =====================================================================
+  // Agents track walk-through. Mirrors evovle_agents (capabilities.py +
+  // build_capabilities.py + agent_library.py + build_agents.py):
+  //   * an AGENT is now a CAPABILITY — a tool-coherent, DISJOINT bundle of the
+  //     domain's tools, derived by PARTITIONING the tool universe by ENTITY
+  //     (tool_capability: the table each tool acts on). Every tool belongs to
+  //     exactly ONE capability, so the partition is total + disjoint +
+  //     non-empty: each agent owns its COMPLETE bundle (never empty).
+  //   * each capability -> one Codex SUBAGENT, built DETERMINISTICALLY (no LLM).
+  //     build_capabilities re-homes ALL workflow content BY TABLE (field rules
+  //     by their table; each workflow's Source policy + Notes by its primary
+  //     write target; references unioned), and verify_no_content_dropped ABORTS
+  //     the build if any policy/field/reference would be lost. Every agent also
+  //     carries the FULL domain policy as operating context -> COMPLETE.
+  //   * a task needs >1 agent when its selected_tools SPAN several capabilities
+  //     (task_capabilities). ~98-100% do (49/50 csm, 75/75 hr, 82/83 itsm), yet
+  //     stay solvable (the spanned bundles jointly cover all its gold tools).
+  //   * rosters grow per version (a capability enters when a version's tools
+  //     first touch its entity); the lead is a tool-less ROUTER that delegates
+  //     + coordinates; carried-forward agents are distractors.
+  // Toy: a small HR tool universe partitioned by entity (real csm=7 caps/57
+  // tools, hr=6, itsm=7).
+  const CC = {  // capability colours
+    directory: "#2563eb", leave: "#16a34a", payroll: "#d97706",
+    benefits: "#7c3aed", access: "#dc2626",
+  };
+  const CAP = {  // capability slug -> { title, entity, DISJOINT tool bundle }
+    directory: { title: "Directory", entity: "employee",     tools: ["get_employee", "update_employee"] },
+    leave:     { title: "Leave",     entity: "leave_request", tools: ["get_leave_balance", "approve_leave"] },
+    payroll:   { title: "Payroll",   entity: "payroll_run",   tools: ["run_payroll"] },
+    benefits:  { title: "Benefits",  entity: "benefit",       tools: ["enroll_benefit"] },
+    access:    { title: "Access",    entity: "access_grant",   tools: ["grant_access", "revoke_access", "check_access"] },
+  };
+  const CAP_ORDER = ["directory", "leave", "payroll", "benefits", "access"];
+  const CAP_OF_TOOL = {};                          // tool -> owning capability
+  CAP_ORDER.forEach((c) => CAP[c].tools.forEach((t) => { CAP_OF_TOOL[t] = c; }));
+  const CAP_UNIVERSE = CAP_ORDER.flatMap((c) => CAP[c].tools);  // the tool universe
+  // The version a capability first enters the roster, staged by CAPABILITY
+  // FREQUENCY (core caps first) — the agents track's OWN version axis (see
+  // capabilities._capability_staging). The pool only grows T1={directory,leave}
+  // ⊂ T2=+{payroll,benefits} ⊂ T3=+{access}.
+  const CAP_VER = { directory: 0, leave: 0, payroll: 1, benefits: 1, access: 2 };
+  // old workflow skills (dropped as UNITS) -> their facts re-home by table.
+  const WF = [
+    { id: "employee-records", table: "employee", cap: "directory" },
+    { id: "leave-management", table: "leave_request", cap: "leave" },
+    { id: "payroll-run", table: "payroll_run", cap: "payroll" },
+  ];
+  // one worked task: its gold tools span 3 capabilities -> needs 3 agents.
+  const CAP_TASK = { id: "onboard + first pay-run", tools: ["get_employee", "run_payroll", "grant_access"] };
+  // per-version routing examples (gold capability set; >=1 new at that version).
+  const CAP_ROUTE = [
+    { id: "P", ver: 0, caps: ["directory", "leave"] },
+    { id: "Q", ver: 1, caps: ["directory", "payroll"] },
+    { id: "R", ver: 1, caps: ["leave", "benefits"] },
+    { id: "S", ver: 2, caps: ["payroll", "access", "directory"] },
+  ];
+  const A_STEPS = [
+    "partition tools by entity",
+    "build complete agents",
+    "task spans &rarr; &ge;2 agents",
+    "versions &middot; route &amp; delegate",
+  ];
+  const A_CAPS = [
+    "An <b>agent is a capability</b> — a <b>disjoint</b> bundle of the domain's tools, found by <b>partitioning the tool universe by entity</b> (the table each tool acts on), with <b>no LLM</b>. Every tool lands in <b>exactly one</b> capability, so the partition is <b>total, disjoint &amp; non-empty</b> — each agent owns its <b>complete</b> tool bundle (never empty).",
+    "Each capability is built into one subagent <b>deterministically</b>. <b>All</b> workflow content is <b>re-homed by table</b> — field rules by their table, each workflow's policy + notes by its primary write target, references unioned — and a hard verifier <b>aborts the build</b> if any fact is lost. Plus every agent carries the <b>full domain policy</b> as context &rArr; each subagent is <b>complete</b>.",
+    "A task needs <b>one agent per capability its tools touch</b>. Because the bundles are <b>disjoint</b> and a task's tools usually span several entities, it needs <b>&ge;2 agents</b> — yet stays <b>solvable</b> (the spanned bundles jointly cover all its gold tools). <b>~98–100%</b> of tasks are multi-agent.",
+    "Agents are a <b>given</b>, accumulating resource. The agents track stages its <b>own</b> versions by <b>capability frequency</b> (core caps first), <b>not</b> by skill emergence (coarse caps saturate at T₁), and <b>cuts</b> each version with a <b>min_new_tasks</b> + <b>capability-growth</b> floor — so the roster <b>grows every version</b> (T₁ &sub; T₂ &sub; T₃). The lead is a tool-less <b>router</b>: it must <b>delegate</b> to the task's gold agents (&ge;1 <b>new</b>) and <b>coordinate</b> several; carried-forward extras are <b>distractors</b>.",
+  ];
+  const A_FEATS = [
+    "<b>Agent = capability = a disjoint, complete tool bundle</b> (partition by entity, no LLM): total, disjoint, non-empty. Real domains carve <b>csm 7</b>, <b>hr 6</b>, <b>itsm 7</b> capabilities over their tool universes.",
+    "<b>Every subagent is complete &amp; nothing is dropped</b>: all workflow facts (field rules, policy, references) are re-homed by table and <b>verify_no_content_dropped</b> aborts the build on any loss; every agent also gets the full domain policy. Workflow skills are dropped only <b>as units</b> (name/grouping).",
+    "<b>Coordination is forced</b>: a task needs one agent per capability its tools span, so <b>49/50 csm · 75/75 hr · 82/83 itsm</b> tasks need <b>&ge;2</b> agents — yet every task stays solvable. The roster <b>accumulates</b> per version and extras are <b>distractors</b>; the metric is the lead's <b>delegation</b>.",
+  ];
+  const A_TAG = ["T₁", "T₂", "T₃"];   // version tags (NOT agent names) — matches tools/skills
+
+  const cap_chip = (c, opts) => {
+    opts = opts || {};
+    return `<span class="dbt-agent${opts.muted ? " is-muted" : ""}" style="--tc:${CC[c]}">${CAP[c].title}</span>`;
+  };
+  const cap_chipNO = (c, isOld) =>
+    `<span class="dbt-agent${isOld ? " is-muted" : ""}" style="--tc:${CC[c]}">${CAP[c].title}` +
+    `<b class="dbt-flag dbt-flag--${isOld ? "old" : "new"}">${isOld ? "old" : "new"}</b></span>`;
+  // tool chip coloured by its OWNING capability (so the partition reads at a glance)
+  const cap_tool = (t, opts) => {
+    opts = opts || {};
+    return `<span class="dbt-ctool${opts.muted ? " is-muted" : ""}" style="--tc:${CC[CAP_OF_TOOL[t]]}">${t}</span>`;
+  };
+  const mtool = (t) => `<span class="dbt-mini">${t}</span>`;
+
+  function agentsPanelHTML() {
+    // phase 1 — partition the tool universe BY ENTITY into disjoint capability
+    // bundles (the agent roster). Mirrors capabilities.capability_tool_map.
+    const uni = CAP_UNIVERSE.map((t) =>
+      `<span class="dbt-ctool" style="--tc:var(--border-strong)">${t}</span>`).join("");
+    const bins = CAP_ORDER.map((c) =>
+      `<div class="dbt-capbin" style="--tc:${CC[c]}">` +
+        `<div class="dbt-capbin-h"><span class="dbt-capbin-dot"></span><b>${CAP[c].title}</b>` +
+          `<span class="dbt-capbin-ent">entity <code>${CAP[c].entity}</code></span></div>` +
+        `<div class="dbt-capbin-tools">${CAP[c].tools.map(mtool).join("")}</div></div>`).join("");
+    const p1 = `<div class="dbt-phase dbt-p1">` +
+      `<figure class="dbt-uni-fig"><figcaption class="dbt-uni-cap"><span class="db-cap-k">Tool universe</span> every tool the domain's tasks ever call (union of all selected_tools)</figcaption>` +
+        `<div class="dbt-uni">${uni}</div></figure>` +
+      `<div class="dbt-splitar"><span class="dbt-splitar-line"></span>` +
+        `<span class="dbt-splitar-lab">Partition by <b>entity</b>: parse each tool's name &rarr; the <b>table it acts on</b> &rarr; route it to <b>exactly one</b> capability (deterministic, no LLM).</span></div>` +
+      `<div class="dbt-capgrid">${bins}</div>` +
+      `<div class="dbt-foot"><b>The roster.</b> The partition is <b>disjoint</b> (every tool in exactly one bundle), <b>total</b> (no tool dropped) and <b>non-empty</b> (each capability owns &ge;1 tool) — so each <b>capability = one agent</b> that owns its <b>complete</b> tool bundle.</div>` +
+      `</div>`;
+
+    // phase 2 — build each capability into a COMPLETE subagent: re-home ALL
+    // workflow content by table + full domain policy; verifier aborts on loss.
+    const wfRows = WF.map((w) =>
+      `<div class="dbt-attr-row"><span class="dbt-mini">${w.id}</span><span class="dbt-attr-ar">&rarr;</span>` +
+      `<code class="dbt-tbl">${w.table}</code><span class="dbt-attr-ar">&rarr;</span>${cap_chip(w.cap)}</div>`).join("");
+    const acard = `<div class="dbt-acard" style="--tc:${CC.directory}">` +
+      `<div class="dbt-acard-h">${cap_chip("directory")}<span class="dbt-acard-tag">one complete subagent</span></div>` +
+      `<div class="dbt-acard-row"><span class="dbt-acard-k">tools</span><span class="dbt-acard-v">${CAP.directory.tools.map(mtool).join("")}<i>complete bundle</i></span></div>` +
+      `<div class="dbt-acard-row"><span class="dbt-acard-k">SKILL.md</span><span class="dbt-acard-v">Scope · Required fields · Operating rules · references <i>re-homed by table</i></span></div>` +
+      `<div class="dbt-acard-row"><span class="dbt-acard-k">context</span><span class="dbt-acard-v">full domain policy <i>shared by every agent</i></span></div>` +
+      `<div class="dbt-acard-row"><span class="dbt-acard-k">model</span><span class="dbt-acard-v">inherits the orchestrator</span></div>` +
+      `<div class="dbt-acard-complete">&#10003; complete — owns every tool + every rule it can act on</div></div>`;
+    const p2 = `<div class="dbt-phase dbt-p2">` +
+      `<div class="dbt-rulebar">Each capability becomes <b>one subagent</b>, assembled <b>deterministically</b> (no LLM): it owns its <b>complete tool bundle</b>, and <b>all</b> workflow content is <b>re-homed onto it by table</b> — then a hard verifier checks <b>nothing was lost</b>.</div>` +
+      `<div class="dbt-tag">` +
+        `<div class="dbt-tag-how">` +
+          `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">1</span> old <b>workflow skills</b> — dropped as <b>units</b>, facts kept</div>` +
+            `<div class="dbt-attr-line">${WF.map((w) => `<span class="dbt-mini">${w.id}</span>`).join("")}</div></div>` +
+          `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">2</span> re-home each fact <b>by table</b> &rarr; the capability that owns it</div>` +
+            `<div class="dbt-attr">${wfRows}</div></div>` +
+          `<div class="dbt-tag-step dbt-tag-out"><div class="dbt-tag-h"><span class="dbt-tag-n">&#10003;</span> <b>verify_no_content_dropped</b> — build <b>aborts</b> if any field-cell, policy line or reference fails to re-home</div></div>` +
+        `</div>` +
+        `<div class="dbt-tag-res"><div class="dbt-tag-res-h">the assembled agent (capability directory) &rarr;</div>${acard}</div>` +
+      `</div>` +
+      `<div class="dbt-foot"><b>Trade-off.</b> Workflow skills lose their <b>grouping/name</b> as units — but <b>every fact</b> (field rules, policy, references) is preserved and re-homed by table, and each agent also carries the <b>full domain policy</b>, so no rule is invisible to the agent that can act on it.</div>` +
+      `</div>`;
+
+    // phase 3 — a task whose tools SPAN several capabilities needs one agent per
+    // capability. Mirrors capabilities.task_capabilities.
+    const tk = CAP_TASK;
+    const tcaps = CAP_ORDER.filter((c) => tk.tools.some((x) => CAP_OF_TOOL[x] === c));
+    const mapRows = tk.tools.map((x) =>
+      `<div class="dbt-attr-row">${cap_tool(x)}<span class="dbt-attr-ar">&rarr;</span>${cap_chip(CAP_OF_TOOL[x])}</div>`).join("");
+    const rates = [["csm", "49 / 50"], ["hr", "75 / 75"], ["itsm", "82 / 83"]];
+    const rateRows = rates.map(([d, n]) =>
+      `<div class="dbt-stat"><span class="dbt-stat-d">${d}</span><span class="dbt-stat-n">${n}</span><span class="dbt-stat-l">need &ge;2 agents</span></div>`).join("");
+    const p3 = `<div class="dbt-phase dbt-p3"><div class="dbt-tag">` +
+      `<div class="dbt-tag-how">` +
+        `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">1</span> Task &ldquo;${tk.id}&rdquo; — its gold <b>tools</b></div>` +
+          `<div class="dbt-attr-line">${tk.tools.map((x) => cap_tool(x)).join("")}</div></div>` +
+        `<div class="dbt-tag-step"><div class="dbt-tag-h"><span class="dbt-tag-n">2</span> map each tool &rarr; the <b>one</b> capability that owns it</div>` +
+          `<div class="dbt-attr">${mapRows}</div></div>` +
+        `<div class="dbt-tag-step dbt-tag-out"><div class="dbt-tag-h"><span class="dbt-tag-n">&rArr;</span> tools <b>span</b> ${tcaps.map((c) => cap_chip(c)).join(" ")} &rarr; needs <b>${tcaps.length} agents</b> · coordinate — yet <b>solvable</b></div></div>` +
+      `</div>` +
+      `<div class="dbt-tag-res"><div class="dbt-tag-res-h">why &ge;2 agents is the norm &rarr;</div><div class="dbt-stats">${rateRows}</div>` +
+        `<div class="dbt-stat-note">Disjoint bundles + tasks touching several entities &rArr; coordination is <b>forced</b>; the rare solo task touches a single entity.</div></div>` +
+      `</div></div>`;
+
+    // phase 4 — the roster GROWS per version. The agents track stages its OWN
+    // versions by CAPABILITY FREQUENCY (core caps first) and decides WHERE to
+    // cut with TWO floors (capabilities._capability_staging ->
+    // evolve_tools.build_frequency_anchors_adaptive):
+    //   - min_new_tasks_per_stage : >= N tasks become newly solvable, AND
+    //   - min_growth_frac         : the roster grows by >= a fraction of caps.
+    // Each task lands at the earliest version whose roster covers its caps.
+    const capVers = A_TAG.map((tag, k) => ({
+      tag, k,
+      cum: CAP_ORDER.filter((c) => CAP_VER[c] <= k),
+      delta: CAP_ORDER.filter((c) => CAP_VER[c] === k),
+    }));
+    const p4seen = new Set();
+    const chain = capVers.map((v) => {
+      const have = new Set(v.cum);
+      const solv = CAP_ROUTE.filter((r) => r.caps.every((c) => have.has(c)));
+      const fresh = solv.filter((r) => !p4seen.has(r.id));
+      solv.forEach((r) => p4seen.add(r.id));
+      const freshChips = fresh.length
+        ? fresh.map((r) => `<i class="dbt-solv-chip">Task ${r.id}</i>`).join(" ")
+        : `<i class="dbt-solv-chip is-none">none</i>`;
+      const dcap = `+${v.delta.length} cap${v.delta.length === 1 ? "" : "s"}`;
+      const fcount = `+${fresh.length} new task${fresh.length === 1 ? "" : "s"}`;
+      const badge = v.k === 0
+        ? `<span class="dbt-cut-badge dbt-cut-badge--floor">${dcap} &middot; ${fresh.length} task${fresh.length === 1 ? "" : "s"} &ge; floor (N=1)</span>`
+        : `<span class="dbt-cut-badge">${dcap} &middot; ${fcount} &ge; floor</span>`;
+      const main = `<div class="dbt-cat"><span class="dbt-cat-tag">${v.tag}</span>` +
+        `<span class="dbt-cat-tools">${v.cum.map((c) => cap_chip(c, { muted: CAP_VER[c] < v.k })).join(" ")}</span>` +
+        `<span class="dbt-cat-delta">${v.k === 0 ? "initial roster" : "+ " + v.delta.map((c) => CAP[c].title).join(", ")}</span></div>`;
+      const sub = `<div class="dbt-cut-sub"><span class="dbt-cut-arrow">&#8627;</span> newly solvable: ${freshChips} ${badge}</div>`;
+      return `<div class="dbt-cutrow">${main}${sub}</div>`;
+    }).join("");
+    const routes = capVers.map((v) => {
+      const inV = CAP_ROUTE.filter((r) => r.ver === v.k);
+      return `<div class="dbt-asg-ver"><span class="dbt-asg-tag">${v.tag}</span><div class="dbt-asg-tasks">${
+        inV.map((r) => {
+          const chips = r.caps.map((c) => cap_chipNO(c, CAP_VER[c] < r.ver)).join(" ");
+          const n = r.caps.length;
+          const sum = n > 1 ? `route to ${n} agents &middot; <b>coordinate</b>` : "route to 1 agent";
+          return `<div class="dbt-asg-task${n > 1 ? " is-coord" : ""}"><span class="dbt-asg-name">Task ${r.id}</span>` +
+            `<span class="dbt-asg-tools">${chips}</span><span class="dbt-asg-sum">${sum}</span></div>`;
+        }).join("")
+      }</div></div>`;
+    }).join("");
+    const p4 = `<div class="dbt-phase dbt-p4">` +
+      `<div class="dbt-rulebar">The agents track stages its <b>own</b> versions by <b>capability frequency</b> (core caps first), <b>not</b> by skill emergence (coarse caps would saturate at T₁ — 0 new agents after). Where to <b>cut</b> each version is set by <b>two floors</b>: <b>&ge; min_new_tasks</b> newly-solvable tasks <b>and</b> a <b>capability-growth</b> floor; each task lands at the <b>earliest version whose roster covers its caps</b>, so the pool only grows T₁ &sub; T₂ &sub; T₃.</div>` +
+      `<div class="dbt-asg-h">the <b>roster</b> after each cut — grows every version &rarr;</div>` +
+      `<div class="dbt-cats dbt-cats--cut">${chain}</div>` +
+      `<div class="dbt-asg-h">the lead <b>routes</b> each task to its gold agents (&ge;1 <b>new</b>) &amp; <b>coordinates</b> &rarr;</div>` +
+      `<div class="dbt-assign">${routes}</div>` +
+      `<div class="dbt-foot"><b>Real floors</b> (<code>capabilities._capability_staging</code>). <code>min_new_tasks</code> = <b>7</b>/version (enterprise <b>100</b>); the growth floor <code>min_growth_frac</code> = <b>0.15</b> (enterprise <b>0.02</b> &asymp; floor-only, so the task floor sets the step size). Staged by frequency the roster grows <b>every</b> version (never saturating) — for the dense enterprise domain this spreads into up to <b>~15</b> balanced versions (110–254 tasks each). Carried-forward extras become <b>distractors</b>.</div>` +
+      `</div>`;
+
+    return `
+      <div class="db-panel${active === "agents" ? " is-active" : ""}" data-panel="agents">
+        <div class="dbt" data-phase="1">
+          <div class="dbt-bar">
+            <ol class="dbt-steps">${
+              A_STEPS.map((s, i) =>
+                `<li data-step="${i + 1}" role="button" tabindex="0" title="Click to study this step"><b>${i + 1}</b>${s}</li>`
+              ).join("")
+            }</ol>
+            <button class="dbt-play" type="button" data-playing="true" title="Pause" aria-label="Pause or play the walk-through"></button>
+          </div>
+          <div class="dbt-stage">${p1}${p2}${p3}${p4}</div>
+          <div class="dbt-caps">${
+            A_CAPS.map((c, i) => `<p data-cap="${i + 1}">${c}</p>`).join("")
+          }</div>
+          <div class="dbt-feats">
+            <span class="dbt-feats-k">Guarantee</span>
+            <ul>${A_FEATS.map((f) => `<li>${f}</li>`).join("")}</ul>
+          </div>
+          <!-- Entry point into the full agent-benchmark detail page. Routes to
+               the #agent-datasets view (/agents/benchmark): the 4-tab dataset
+               explorer (How it's built / Evolution / Real-world fit / Browser). -->
+          <button class="dbt-cta" type="button" data-tab="agent-datasets">
+            <span class="dbt-cta-k">Deep dive</span>
+            <span class="dbt-cta-tx">
+              <b>Statistics, examples &amp; realistic assessment</b>
+              <i>How it's built · Evolution · Real-world fit · Task browser</i>
+            </span>
+            <span class="dbt-cta-arrow" aria-hidden="true">&rarr;</span>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // Drive every 4-phase walk-through (.dbt) on the page. The reader can CLICK
+  // any step to jump to it (which pauses auto-advance so they can study it) and
+  // use the play/pause button to resume. Auto-advance only runs while playing
+  // AND on screen (IntersectionObserver reports a display:none subtree as not
+  // intersecting, so switching tab / landing page pauses it automatically).
+  function startWalkthroughs(root) {
+    root.querySelectorAll(".dbt").forEach((dbt) => {
+      if (dbt._wired) return;
+      dbt._wired = true;
+      const N = dbt.querySelectorAll(".dbt-steps li").length || 4;
+      let phase = 1, playing = true, visible = false, timer = null;
+
+      const render = () => {
+        dbt.setAttribute("data-phase", String(phase));
+        const b = dbt.querySelector(".dbt-play");
+        if (b) {
+          b.dataset.playing = String(playing);
+          b.title = playing ? "Pause" : "Play";
+        }
+      };
+      const sync = () => {
+        if (playing && visible) {
+          if (!timer) timer = setInterval(() => { phase = (phase % N) + 1; render(); }, 3200);
+        } else if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+      const goTo = (p) => { phase = ((p - 1 + N) % N) + 1; render(); };
+      render();
+
+      const steps = dbt.querySelector(".dbt-steps");
+      const onStep = (li) => {
+        if (!li) return;
+        playing = false;          // studying a step -> stop auto-advance
+        goTo(Number(li.dataset.step));
+        sync();
+      };
+      if (steps) {
+        steps.addEventListener("click", (e) => onStep(e.target.closest("li[data-step]")));
+        steps.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onStep(e.target.closest("li[data-step]")); }
+        });
+      }
+      const btn = dbt.querySelector(".dbt-play");
+      if (btn) btn.addEventListener("click", () => { playing = !playing; render(); sync(); });
+
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver((es) => {
+          es.forEach((e) => { visible = e.isIntersecting; });
+          sync();
+        }, { threshold: 0.3 }).observe(dbt);
+      } else {
+        visible = true;
+        sync();
+      }
+    });
+  }
+
+  function select(k) {
+    if (!TRACKS[k]) return;
+    active = k;
+    const root = document.getElementById("db-root");
+    if (!root) return;
+    $$(".db-tab", root).forEach((b) => b.classList.toggle("is-active", b.dataset.dbtrack === k));
+    $$(".db-panel", root).forEach((p) => p.classList.toggle("is-active", p.dataset.panel === k));
+    const blurb = $(".db-blurb", root);
+    if (blurb) blurb.innerHTML = TRACKS[k].blurb;
+  }
+
+  function mount() {
+    if (mounted) return;
+    const root = document.getElementById("db-root");
+    if (!root) return;
+    const tabs = ORDER.map((k) =>
+      `<button class="db-tab${k === active ? " is-active" : ""}" type="button" data-dbtrack="${k}">` +
+      `<span class="db-tab-dot db-dot--${k}"></span>${TRACKS[k].label}</button>`
+    ).join("");
+    root.innerHTML =
+      `<div class="db-tabs" role="tablist">${tabs}</div>` +
+      `<p class="db-blurb">${TRACKS[active].blurb}</p>` +
+      `<div class="db-panels">${
+        ORDER.map((k) => (k === "tools" ? toolsPanelHTML() : k === "skills" ? skillsPanelHTML() : agentsPanelHTML())).join("")
+      }</div>`;
+    root.addEventListener("click", (e) => {
+      const b = e.target.closest(".db-tab");
+      if (b && b.dataset.dbtrack) select(b.dataset.dbtrack);
+    });
+    startWalkthroughs(root);
+    mounted = true;
+  }
+
+  return { mount, select };
+})();
+
+// ---------------------------------------------------------------------------
+// Landing — 3-page stepper  (Framework · Dataset building · Evaluation & observability)
+// ---------------------------------------------------------------------------
+const LP = (() => {
+  let page = 1;
+
+  function go(n) {
+    n = Math.max(1, Math.min(3, n | 0));
+    page = n;
+    const root = document.getElementById("landing");
+    if (!root) return;
+    $$(".lp-page", root).forEach((p) => p.classList.toggle("is-active", Number(p.dataset.lpPage) === n));
+    $$(".lp-step", root).forEach((s) => s.classList.toggle("is-active", Number(s.dataset.lp) === n));
+    $$(".lp-dots i", root).forEach((d) => d.classList.toggle("is-active", Number(d.dataset.lp) === n));
+    const prev = $(".lp-prev", root);
+    const next = $(".lp-next", root);
+    if (prev) prev.disabled = n === 1;
+    if (next) next.disabled = n === 3;
+
+    // P1 holds the framework diagram whose feedback loop is measured from
+    // live layout — re-align now that it is visible again.
+    if (n === 1) {
+      requestAnimationFrame(alignFeedbackLoop);
+      setTimeout(alignFeedbackLoop, 120);
+    }
+    // P2 builds its panels lazily the first time it is opened.
+    if (n === 2) DB.mount();
+  }
+
+  function init() {
+    const root = document.getElementById("landing");
+    if (!root) return;
+    root.addEventListener("click", (e) => {
+      const dot = e.target.closest(".lp-dots i");
+      if (dot && dot.dataset.lp) { go(Number(dot.dataset.lp)); return; }
+      const step = e.target.closest(".lp-step");
+      if (step && step.dataset.lp) { go(Number(step.dataset.lp)); return; }
+      if (e.target.closest(".lp-next")) { go(page + 1); return; }
+      if (e.target.closest(".lp-prev")) { go(page - 1); return; }
+    });
+    go(1);
+  }
+
+  return { init, go };
+})();
+
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
@@ -5362,6 +8715,10 @@ showTab(tabFromLocation(), { skipPushState: true });
 if (!window.history.state || !window.history.state.tab) {
   window.history.replaceState({ tab: tabFromLocation() }, "");
 }
+
+// Wire up the 3-page landing stepper (Framework · Dataset building ·
+// Evaluation & observability) and start on page 1.
+LP.init();
 
 // Run the landing diagram alignment a couple of times after first paint
 // so it survives webfont swap and any late-layout settling.

@@ -88,11 +88,21 @@ body {
   color: var(--accent);
   border-color: rgba(96, 165, 250, 0.3);
 }
-.tab-root {
-  padding: 6px 10px;
-  font-size: 15px;
-  line-height: 1;
+/* "← Back to dataset building" — a contextual back affordance shown only on
+   the Tools Benchmark detail view (toggled via .tab-back-hidden in showTab). */
+.tab-back {
+  color: var(--accent);
+  background: rgba(96, 165, 250, 0.08);
+  border-color: rgba(96, 165, 250, 0.3);
+  font-weight: 600;
+  margin-right: 6px;
 }
+.tab-back:hover {
+  background: rgba(96, 165, 250, 0.16);
+  color: var(--accent);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+.tab-back-hidden { display: none; }
 
 main { padding: 16px 24px 32px; flex: 1; }
 .view { display: none; }
@@ -908,6 +918,21 @@ table.dense tr:hover td { background: rgba(96,165,250,0.05); }
   border-color: rgba(96, 165, 250, 0.4);
 }
 
+/* ----------- Per-space nav groups (Tools / Skills) ----------- */
+.tab-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tab-group.group-hidden { display: none; }
+.tab-context {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 4px 0 2px;
+  letter-spacing: 0.2px;
+}
+
 /* ----------- Results: CL Summary view ----------- */
 .rs-modebar {
   display: flex;
@@ -918,6 +943,43 @@ table.dense tr:hover td { background: rgba(96,165,250,0.05); }
 .rs-modebar .view-tabs { margin-right: 8px; }
 .rs-browser-tools, .rs-summary-tools {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+/* ----------- Skills results: Summary figure grid ----------- */
+.skrs-fig-group {
+  margin: 18px 0 6px;
+  font-size: 14px;
+  color: var(--accent);
+}
+.skrs-fig-group:first-child { margin-top: 6px; }
+.skrs-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+.skrs-fig {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--panel);
+}
+.skrs-fig figcaption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', Menlo, monospace;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.skrs-fig figcaption .dl-btn { opacity: 1; }
+.skrs-fig img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: #ffffff;
 }
 
 .rs-summary {
@@ -1165,6 +1227,39 @@ table.dense tr:hover td { background: rgba(96,165,250,0.05); }
   font-size: 14px;
   color: var(--accent);
   letter-spacing: 0.3px;
+}
+
+/* Dataset statistics table (Evolution tab, all axes) */
+.stats-card { margin-bottom: 22px; }
+.stats-sub { margin: 0 0 12px 0; font-size: 12px; }
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.stats-table th, .stats-table td {
+  padding: 7px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.stats-table th {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.stats-table td.num, .stats-table th.num { text-align: right; }
+.stats-table td.num-strong { font-weight: 700; color: var(--text); }
+.stats-table td.muted { color: var(--muted); }
+.stats-table tbody tr:hover td { background: var(--panel-2); }
+.stats-table tfoot tr.stats-total td {
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--text);
 }
 .evo-legend {
   display: flex;
@@ -2247,33 +2342,6 @@ table.dense tr:hover td { background: rgba(96,165,250,0.05); }
    ========================================================================= */
 .landing-view { padding: 8px 0 40px; }
 
-.landing-hero {
-  max-width: 820px;
-  margin: 24px auto 28px;
-  text-align: center;
-  padding: 0 16px;
-}
-.landing-eyebrow {
-  font-size: 11px;
-  letter-spacing: 1.4px;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-.landing-title {
-  font-size: 30px;
-  line-height: 1.2;
-  margin: 0 0 12px;
-  letter-spacing: -0.3px;
-}
-.landing-sub {
-  color: var(--muted);
-  font-size: 14.5px;
-  line-height: 1.55;
-  margin: 0;
-}
-
 .landing-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -2281,6 +2349,81 @@ table.dense tr:hover td { background: rgba(96,165,250,0.05); }
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 16px;
+}
+
+/* P3 shared framing: the four research questions + the system / method
+   framework, shown once above the three live dashboards (replaces the
+   per-card prose). Editorial layout: gradient numerals on an accent rail,
+   then a single sleek framework bar. */
+.lp-eval-intro { max-width: 1040px; margin: 2px auto 30px; padding: 0 16px; }
+
+.lp-eval-eyebrow {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin: 0 0 16px;
+  font-size: 11px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--muted);
+}
+.lp-eval-eyebrow::before, .lp-eval-eyebrow::after {
+  content: ""; height: 1px; width: 36px;
+  background: linear-gradient(90deg, transparent, var(--border-strong));
+}
+.lp-eval-eyebrow::after { background: linear-gradient(90deg, var(--border-strong), transparent); }
+
+.lp-rqs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 18px; }
+.lp-rq {
+  display: flex; align-items: center; gap: 15px;
+  position: relative; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 15px 18px;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.lp-rq::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+}
+.lp-rq:hover {
+  transform: translateY(-2px); border-color: var(--accent);
+  box-shadow: 0 12px 28px -18px rgba(37,99,235,0.55);
+}
+.lp-rq-num {
+  flex: 0 0 auto; min-width: 38px;
+  font-size: 30px; font-weight: 800; line-height: 1; letter-spacing: -1.5px;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+.lp-rq-num small {
+  font-size: 12px; font-weight: 800; letter-spacing: .3px;
+  vertical-align: 13px; margin-right: 1px;
+}
+.lp-rq p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.lp-rq b { font-weight: 700; color: var(--text); }
+
+.lp-frame {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 10px 16px; max-width: 940px; margin: 0 auto;
+  background: linear-gradient(135deg, rgba(37,99,235,0.05), rgba(99,102,241,0.06));
+  border: 1px solid rgba(37,99,235,0.20); border-radius: 14px;
+  padding: 11px 18px;
+}
+.lp-frame-title {
+  font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--accent);
+}
+.lp-frame-axis { display: flex; align-items: center; gap: 8px; }
+.lp-frame-k { font-size: 11.5px; font-weight: 700; color: var(--text); }
+.lp-frame-chip {
+  font-size: 11.5px; color: var(--text); white-space: nowrap;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 11px;
+}
+.lp-frame-chip i { font-style: normal; color: var(--muted); font-size: 10.5px; }
+.lp-frame-div { width: 1px; height: 22px; background: var(--border-strong); }
+
+@media (max-width: 760px) {
+  .lp-rqs { grid-template-columns: 1fr; }
+  .lp-frame-div { display: none; }
 }
 
 /* ----------------------------------------------------------------------
@@ -3739,6 +3882,218 @@ button.landing-card:hover .landing-card-cta { text-decoration: underline; }
   width: 10px; height: 12px; border-radius: 2px;
 }
 
+/* ---- Agents card: ORCHESTRATION of a growing roster of sub-agents ----
+   Deliberately NOT the Tools layout (no tool squares, no linear tool-call
+   trajectory). Each column is a delegation tree: a lead ORCHESTRATOR fans
+   delegation lines down onto a roster of SUB-AGENTS, each drawn as an agent
+   silhouette (a sub-agent *is* an agent). One verdict badge per column = the
+   task pass/fail for that orchestration. */
+.agents-anim {
+  background: linear-gradient(180deg, rgba(13,148,136,0.06), rgba(37,99,235,0.04));
+  border-color: rgba(13,148,136,0.20);
+}
+/* The column is orchestrator → fan → roster → verdict, so drop the tall
+   memory reserve the Tools card uses. */
+.agents-anim .tools-anim-stages { min-height: 0; }
+/* Re-anchor the carry "→" to the roster band for this taller header layout. */
+.agents-anim .tools-anim-stage + .tools-anim-stage::before { top: 98px; }
+
+/* Lead orchestrator: a larger agent icon + caption — the hub of the column. */
+.agents-anim .orch-lead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.agents-anim .agent-icon--lead {
+  width: 27px;
+  height: 29px;
+  filter: drop-shadow(0 1px 2px rgba(37,99,235,0.40));
+}
+.agents-anim .orch-tag {
+  font-size: 8px;
+  letter-spacing: 0.3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent);
+  opacity: 0;
+  animation: argTick 5s ease-in-out var(--d, 0s) infinite;
+}
+
+/* Delegation fan — lines from the orchestrator down onto the spawned
+   sub-agents. This one-to-many fan IS the orchestration signal. */
+.agents-anim .orch-fan {
+  width: 100%;
+  max-width: 124px;
+  height: 18px;
+  overflow: visible;
+}
+.agents-anim .orch-fan .spawn {
+  fill: none;
+  stroke: rgba(30,64,175,0.95);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: hopDraw 5s ease-in-out var(--d, 0s) infinite;
+}
+.agents-anim .orch-fan .spawn--bad { stroke: rgba(239,68,68,0.95); }
+
+/* Roster of sub-agents — each is an AGENT (silhouette), never a tool square. */
+.agents-anim .agent-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 9px;
+  justify-content: center;
+  align-content: flex-start;
+  max-width: 124px;
+  min-height: 42px;
+}
+.agents-anim .sub-agent {
+  position: relative;
+  width: 15px;
+  height: 18px;
+  opacity: 0;
+  transform: scale(0.5);
+  transform-origin: center bottom;
+  animation: toolChipIn 5s ease-in-out var(--d, 0s) infinite;
+}
+.agents-anim .sub-agent::before {            /* head */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: #94a3b8;
+}
+.agents-anim .sub-agent::after {             /* body */
+  content: "";
+  position: absolute;
+  top: 5.5px;
+  left: 50%;
+  width: 15px;
+  height: 11px;
+  border-radius: 50% 50% 20% 20% / 60% 60% 20% 20%;
+  transform: translateX(-50%);
+  background: #94a3b8;
+}
+/* State colours (head / body). */
+.agents-anim .sub-agent.is-idle::before     { background: #bfdbfe; }
+.agents-anim .sub-agent.is-idle::after      { background: #93c5fd; }
+.agents-anim .sub-agent.is-spawn::before    { background: #2563eb; }
+.agents-anim .sub-agent.is-spawn::after     { background: #1e40af; }
+.agents-anim .sub-agent.is-distract::before { background: #cbd5e1; }
+.agents-anim .sub-agent.is-distract::after  { background: #cbd5e1; }
+.agents-anim .sub-agent.is-misroute::before { background: #f87171; }
+.agents-anim .sub-agent.is-misroute::after  { background: #dc2626; }
+/* Newly-added this version: orange pulse ring (composes with any state). */
+.agents-anim .sub-agent.is-new {
+  animation: toolChipInNew 5s ease-in-out var(--d, 0s) infinite;
+}
+/* Per-sub-agent result badge (✓ ran / ✗ misrouted), timed via --ds. */
+.agents-anim .sa-res {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 7px;
+  font-weight: 800;
+  font-style: normal;
+  line-height: 1;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.4);
+  transform-origin: center;
+  animation: hitPop 5s ease-in-out var(--ds, 0s) infinite;
+}
+.agents-anim .sa-res--ok  { background: #16a34a; }
+.agents-anim .sa-res--bad { background: #dc2626; }
+
+/* Task verdict badge for the whole orchestration. */
+.agents-anim .orch-verdict {
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  border: 1px solid;
+  opacity: 0;
+  transform: scale(0.4);
+  transform-origin: center;
+  animation: hitPop 5s ease-in-out var(--d, 0s) infinite;
+}
+.agents-anim .orch-verdict--ok  { color: #16a34a; background: #f0fdf4; border-color: #22c55e; }
+.agents-anim .orch-verdict--bad { color: #dc2626; background: #fef2f2; border-color: #ef4444; }
+
+/* Legend: orchestrator + sub-agent states, all drawn as agent silhouettes so
+   the legend reads "these are agents" (matching the figure). */
+.tools-anim-leg .dot--orch,
+.tools-anim-leg .dot--subok,
+.tools-anim-leg .dot--subidle,
+.tools-anim-leg .dot--subdist,
+.tools-anim-leg .dot--subbad {
+  position: relative;
+  background: transparent;
+  width: 11px;
+  height: 13px;
+  border-radius: 0;
+}
+.tools-anim-leg .dot--orch::before,
+.tools-anim-leg .dot--subok::before,
+.tools-anim-leg .dot--subidle::before,
+.tools-anim-leg .dot--subdist::before,
+.tools-anim-leg .dot--subbad::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+}
+.tools-anim-leg .dot--orch::after,
+.tools-anim-leg .dot--subok::after,
+.tools-anim-leg .dot--subidle::after,
+.tools-anim-leg .dot--subdist::after,
+.tools-anim-leg .dot--subbad::after {
+  content: "";
+  position: absolute;
+  top: 4.5px;
+  left: 50%;
+  width: 11px;
+  height: 8.5px;
+  border-radius: 50% 50% 18% 18% / 60% 60% 18% 18%;
+  transform: translateX(-50%);
+}
+.tools-anim-leg .dot--orch    { width: 12px; height: 14px; }
+.tools-anim-leg .dot--orch::before    { background: #2563eb; }
+.tools-anim-leg .dot--orch::after     { background: #1e40af; }
+.tools-anim-leg .dot--subok::before   { background: #2563eb; }
+.tools-anim-leg .dot--subok::after    { background: #1e40af; }
+.tools-anim-leg .dot--subidle::before { background: #bfdbfe; }
+.tools-anim-leg .dot--subidle::after  { background: #93c5fd; }
+.tools-anim-leg .dot--subdist::before { background: #cbd5e1; }
+.tools-anim-leg .dot--subdist::after  { background: #cbd5e1; }
+.tools-anim-leg .dot--subbad::before  { background: #f87171; }
+.tools-anim-leg .dot--subbad::after   { background: #dc2626; }
+/* Delegation-line swatch. */
+.tools-anim-leg .dot--deleg {
+  width: 16px;
+  height: 0;
+  background: transparent;
+  border-radius: 0;
+  border-top: 1.8px solid rgba(30,64,175,0.9);
+}
+
 /* Respect reduced-motion users. */
 @media (prefers-reduced-motion: reduce) {
   .tool-chip,
@@ -3759,7 +4114,13 @@ button.landing-card:hover .landing-card-cta { text-decoration: underline; }
   .skill-slot.is-new,
   .skill-extra,
   .og-tok,
-  .og-tok.og-new {
+  .og-tok.og-new,
+  .agents-anim .orch-tag,
+  .agents-anim .orch-fan .spawn,
+  .agents-anim .sub-agent,
+  .agents-anim .sub-agent.is-new,
+  .agents-anim .sa-res,
+  .agents-anim .orch-verdict {
     animation: none;
   }
   .tool-chip,
@@ -3772,13 +4133,1001 @@ button.landing-card:hover .landing-card-cta { text-decoration: underline; }
   .mem-cell,
   .skill-slot,
   .skill-extra,
-  .og-tok {
+  .og-tok,
+  .agents-anim .orch-tag,
+  .agents-anim .sub-agent,
+  .agents-anim .sa-res,
+  .agents-anim .orch-verdict {
     opacity: 1;
     transform: none;
   }
   .agent-picks .hop,
-  .anim-trajectory .seq { opacity: 1; stroke-dashoffset: 0; }
+  .anim-trajectory .seq,
+  .agents-anim .orch-fan .spawn { opacity: 1; stroke-dashoffset: 0; }
   .anim-trajectory .miss { opacity: 1; }
   .anim-trajectory .seq--wrong { opacity: 0.85; }
   .agent-picks .cand { opacity: 0.5; }
 }
+
+/* ===========================================================================
+   Build Inspector (Agents axis) — /agents/* views. Matches the light theme.
+   All classes are bi- prefixed to avoid colliding with the rest of the app.
+   =========================================================================== */
+:root {
+  --bi-skill: #7c3aed;
+  --bi-skill-bg: #f3eefe;
+  --bi-agent: #0d9488;
+  --bi-agent-bg: #e6fbf6;
+  --bi-tool-bg: #eef4ff;
+}
+.bi-body { padding: 20px 24px; max-width: 1320px; margin: 0 auto; }
+
+.bi-controls {
+  display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.bi-controls label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+}
+.bi-controls select {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: 7px; padding: 7px 10px; font-size: 13px; min-width: 170px; cursor: pointer;
+}
+.bi-controls-note { margin-left: auto; color: var(--muted); font-size: 12px; font-style: italic; }
+
+.bi-note {
+  background: var(--panel); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 8px;
+  padding: 11px 15px; margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.55;
+}
+.bi-note b { color: var(--text); }
+.bi-note code, .bi-tip code, .bi-muted code, .bi-step code {
+  background: var(--code-bg); padding: 1px 6px; border-radius: 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px;
+}
+.bi-h3 {
+  font-size: 12.5px; margin: 22px 0 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
+}
+.bi-tip { font-size: 12px; color: var(--muted); margin: 6px 0; }
+.bi-muted { color: var(--muted); }
+.bi-faint { color: var(--border-strong); }
+.bi-ul { font-size: 13px; line-height: 1.9; margin: 4px 0; padding-left: 18px; }
+.bi-error {
+  background: #fef2f2; border: 1px solid #fecaca; color: var(--bad);
+  border-radius: 8px; padding: 12px 16px;
+}
+
+/* pipeline flow */
+.bi-flow { display: flex; align-items: stretch; gap: 0; margin: 4px 0 18px; flex-wrap: wrap; }
+.bi-step {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 9px; padding: 11px 14px; flex: 1; min-width: 150px;
+}
+.bi-step h4 { margin: 0 0 5px; font-size: 12.5px; }
+.bi-step p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.bi-arrow { display: flex; align-items: center; color: var(--border-strong); font-size: 20px; padding: 0 8px; }
+.bi-skillc { border-top: 2.5px solid var(--bi-skill); }
+.bi-agentc { border-top: 2.5px solid var(--bi-agent); }
+.bi-toolc { border-top: 2.5px solid var(--accent); }
+
+/* stat cards */
+.bi-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr)); gap: 12px; margin-bottom: 8px; }
+.bi-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; }
+.bi-stat { display: flex; flex-direction: column; gap: 3px; }
+.bi-stat .bi-num { font-size: 25px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bi-stat .bi-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.bi-stat.bi-agentnum .bi-num { color: var(--bi-agent); }
+.bi-stat.bi-accentnum .bi-num { color: var(--accent); }
+.bi-stat.bi-warnnum .bi-num { color: var(--warn); }
+.bi-stat.bi-solonum .bi-num { color: var(--good); }
+.bi-stat.bi-holenum .bi-num { color: var(--bad); }
+
+/* tables */
+.bi-grid { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.bi-grid th, .bi-grid td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+.bi-grid th { background: var(--panel-2); color: var(--muted); font-weight: 700;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .4px; position: sticky; top: 0; }
+.bi-grid tr:last-child td { border-bottom: none; }
+.bi-grid td.bi-num, .bi-grid th.bi-num { text-align: right; font-variant-numeric: tabular-nums; }
+.bi-grid tr.bi-click { cursor: pointer; }
+.bi-grid tr.bi-click:hover td { background: var(--panel-2); }
+.bi-grid code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+.bi-tablewrap { max-height: 68vh; overflow: auto; border-radius: 10px; border: 1px solid var(--border); }
+.bi-tablewrap .bi-grid { border: none; }
+
+/* pills + chips */
+.bi-pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.bi-pill.bi-skill { background: var(--bi-skill-bg); color: var(--bi-skill); }
+.bi-pill.bi-agent { background: var(--bi-agent-bg); color: var(--bi-agent); }
+.bi-pill.bi-tool { background: var(--bi-tool-bg); color: var(--accent);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 500; font-size: 11px; }
+.bi-pill.bi-solo { background: #e7f7ee; color: var(--good); }
+.bi-pill.bi-forced { background: #fdf0dd; color: var(--warn); }
+.bi-pill.bi-hole { background: #fdecec; color: var(--bad); }
+.bi-pill.bi-dim { background: var(--panel-2); color: var(--muted); }
+.bi-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+/* bars */
+.bi-bar-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.bi-bar-row .bi-bl { width: 230px; font-size: 12px; color: var(--muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.bi-bar-track { flex: 1; background: var(--panel-2); border-radius: 6px; height: 22px; overflow: hidden; }
+.bi-bar-fill { height: 100%; border-radius: 6px; display: flex; align-items: center;
+  padding-left: 8px; font-size: 11.5px; font-weight: 600; color: #fff; white-space: nowrap; }
+.bi-bar-fill.bi-accent { background: linear-gradient(90deg,#3b82f6,#2563eb); }
+.bi-bar-fill.bi-solo { background: linear-gradient(90deg,#22c55e,#16a34a); }
+.bi-bar-fill.bi-forced { background: linear-gradient(90deg,#f59e0b,#d97706); }
+.bi-bar-fill.bi-hole { background: linear-gradient(90deg,#ef4444,#dc2626); }
+
+/* code blocks */
+.bi-code { background: #0f172a; color: #cbd5e1; border-radius: 9px; padding: 14px 16px;
+  overflow: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px; line-height: 1.55; max-height: 58vh; white-space: pre; }
+.bi-code .bi-c { color: #64748b; }
+.bi-code .bi-k { color: #fdba74; }
+.bi-code .bi-s { color: #86efac; }
+.bi-code .bi-h { color: #c4b5fd; }
+
+/* layout */
+.bi-split2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .bi-split2 { grid-template-columns: 1fr; } }
+.bi-search { margin-bottom: 10px; }
+.bi-search select { background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 7px; padding: 7px 11px; color: var(--text); font-size: 13px; }
+
+/* drawer */
+.bi-drawer { position: fixed; inset: 0; z-index: 60; }
+.bi-drawer.hidden { display: none; }
+.bi-drawer-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.45); }
+.bi-drawer-panel { position: absolute; top: 0; right: 0; height: 100%; width: min(780px, 94vw);
+  background: var(--bg); border-left: 1px solid var(--border); box-shadow: -12px 0 40px rgba(15,23,42,.18);
+  padding: 22px 26px; overflow-y: auto; animation: bi-slidein .18s ease; }
+@keyframes bi-slidein { from { transform: translateX(28px); opacity: .6; } to { transform: none; opacity: 1; } }
+.bi-drawer-close { position: absolute; top: 12px; right: 16px; background: none; border: none;
+  color: var(--muted); font-size: 26px; cursor: pointer; line-height: 1; }
+.bi-drawer-close:hover { color: var(--text); }
+.bi-dh { margin: 0 30px 6px 0; font-size: 17px; }
+.bi-kv { display: grid; grid-template-columns: 150px 1fr; gap: 7px 14px; margin: 14px 0; font-size: 13px; }
+.bi-kv .bi-key { color: var(--muted); }
+.bi-drawer-panel code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--code-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+
+/* =========================================================================
+   Landing — 3-page stepper  (P1 Framework · P2 Dataset building · P3 Cards)
+   ========================================================================= */
+.lp-steps {
+  display: flex; align-items: stretch; justify-content: center;
+  gap: 0; max-width: 1000px; margin: 24px auto 24px; padding: 0 16px; flex-wrap: wrap;
+}
+.lp-step {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 11px 16px; cursor: pointer; text-align: left;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.lp-step:hover { border-color: var(--border-strong); }
+.lp-step.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 6px 18px -10px rgba(37,99,235,.55);
+}
+.lp-step-no {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.lp-step.is-active .lp-step-no { background: var(--accent); color: #fff; border-color: var(--accent); }
+.lp-step-tx { display: flex; flex-direction: column; line-height: 1.25; }
+.lp-step-tx b { font-size: 13.5px; font-weight: 650; color: var(--muted); transition: color .15s; }
+.lp-step.is-active .lp-step-tx b { color: var(--text); }
+.lp-step-tx i { font-style: normal; font-size: 11.5px; color: var(--muted); }
+.lp-step-sep {
+  align-self: center; width: 26px; height: 2px; border-radius: 2px; margin: 0 6px;
+  background: linear-gradient(90deg, var(--border-strong), var(--border));
+}
+
+.lp-pages { position: relative; }
+.lp-page { display: none; }
+.lp-page.is-active { display: block; animation: lpFade .35s ease both; }
+@keyframes lpFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.lp-controls {
+  display: flex; align-items: center; justify-content: center; gap: 18px;
+  margin: 26px auto 0; max-width: 1100px; padding: 0 16px;
+}
+.lp-prev, .lp-next {
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color .15s, filter .15s, opacity .15s;
+}
+.lp-next { border-color: var(--accent); background: var(--accent); color: #fff; }
+.lp-prev:hover { border-color: var(--border-strong); }
+.lp-next:hover { filter: brightness(1.06); }
+.lp-prev:disabled, .lp-next:disabled { opacity: .4; cursor: default; }
+.lp-dots { display: inline-flex; gap: 8px; align-items: center; }
+.lp-dots i {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong);
+  cursor: pointer; transition: background .15s, transform .15s;
+}
+.lp-dots i.is-active { background: var(--accent); transform: scale(1.25); }
+
+/* =========================================================================
+   Landing P2 — dataset-building animation
+   Same seed dataset, sliced by frequency into evolving versions; three
+   selectable tracks (Tools / Skills / Agents). Pure-CSS keyframe build loop.
+   ========================================================================= */
+.db-figure { max-width: 1100px; }
+
+.db-tabs { display: flex; justify-content: center; gap: 8px; margin: 2px 0 6px; flex-wrap: wrap; }
+.db-tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  border-radius: 999px; padding: 7px 15px; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.db-tab:hover { border-color: var(--border-strong); color: var(--text); }
+.db-tab.is-active { color: var(--text); border-color: var(--border-strong); background: var(--panel-2); }
+.db-tab-dot { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); display: inline-block; }
+.db-dot--tools { background: var(--accent); }
+.db-dot--skills { background: var(--accent-2); }
+.db-dot--agents { background: #0ea5e9; }
+
+.db-blurb { text-align: center; color: var(--muted); font-size: 13px; margin: 4px auto 16px; max-width: 780px; line-height: 1.5; }
+.db-blurb b { color: var(--text); font-weight: 650; }
+
+.db-panels { position: relative; }
+.db-panel { display: none; }
+.db-panel.is-active { display: block; }
+
+.db-stage {
+  display: grid; grid-template-columns: 1fr auto 1.18fr; align-items: center; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px; max-width: 1000px; margin: 0 auto;
+}
+.db-seed, .db-bench { min-width: 0; }
+.db-cap { font-size: 11px; color: var(--muted); margin: 0 0 9px; display: flex; gap: 7px; align-items: center; }
+.db-cap-k {
+  font-size: 9px; letter-spacing: .8px; text-transform: uppercase; font-weight: 800;
+  color: #fff; background: var(--svg-axis); padding: 2px 6px; border-radius: 5px;
+}
+.db-bench .db-cap-k { background: var(--accent); }
+
+.db-seed-box {
+  border: 1.5px dashed var(--border-strong); border-radius: 12px; padding: 10px;
+  display: flex; gap: 10px; align-items: stretch;
+  animation: dbSeed 9s ease-in-out infinite;
+}
+.db-sys {
+  flex: 0 0 56px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+  font-size: 9.5px; color: var(--muted); display: grid; place-items: center;
+  text-align: center; line-height: 1.25; padding: 4px;
+}
+.db-tasks { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.db-task {
+  border: 1px solid var(--border); border-radius: 7px; background: #fff; padding: 6px 8px;
+  display: flex; gap: 5px; align-items: center;
+}
+.db-task::before { content: ""; flex: 1; height: 6px; border-radius: 3px; background: var(--panel-2); }
+.db-task span { width: 10px; height: 10px; border-radius: 3px; background: var(--border-strong); flex: 0 0 auto; }
+.db-note { font-size: 11px; color: var(--muted); margin-top: 9px; line-height: 1.45; }
+.db-note b { color: var(--text); }
+.db-ink { color: var(--bad); font-weight: 700; font-style: normal; }
+
+.db-xform { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 2px; }
+.db-xform-arrow {
+  width: 46px; height: 0; border-top: 2px solid var(--border-strong); position: relative;
+  transform-origin: left center; animation: dbArrow 9s ease-in-out infinite;
+}
+.db-xform-arrow::after {
+  content: ""; position: absolute; right: -1px; top: -5px;
+  border-left: 8px solid var(--border-strong);
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+.db-xform-label { font-size: 10.5px; color: var(--muted); text-align: center; line-height: 1.3; }
+.db-xform-label b { color: var(--accent); }
+
+.db-vers { display: flex; flex-direction: column; gap: 8px; }
+.db-ver {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2);
+  padding: 8px 10px; opacity: 0;
+}
+.db-rev1 { animation: dbRow1 9s ease-in-out infinite; }
+.db-rev2 { animation: dbRow2 9s ease-in-out infinite; }
+.db-rev3 { animation: dbRow3 9s ease-in-out infinite; }
+.db-ver-tag { flex: 0 0 auto; font-size: 11px; font-weight: 800; color: var(--text); width: 22px; }
+.db-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+.db-chip { width: 16px; height: 16px; border-radius: 4px; background: #cbd5e1; border: 1px solid #b8c2d0; }
+.db-chip--skill { background: transparent; border: 1.5px dashed #b8c2d0; position: relative; }
+.db-chip--skill::after { content: ""; position: absolute; inset: 4px; border-radius: 1px; background: #cbd5e1; }
+.db-chip--agent {
+  width: 26px; height: 18px; border-radius: 4px; background: #fff; border: 1px solid #b8c2d0;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 2px 3px;
+}
+.db-chip--agent i { height: 2px; border-radius: 2px; background: #cbd5e1; }
+.db-chip--new { background: var(--bad); border-color: var(--bad); animation: dbNewPulse 2.2s ease-in-out infinite; }
+.db-chip--skill.db-chip--new { background: transparent; border-style: solid; }
+.db-chip--skill.db-chip--new::after { background: var(--bad); }
+.db-chip--agent.db-chip--new { background: #fff; border-color: var(--bad); }
+.db-chip--agent.db-chip--new i { background: var(--bad); }
+
+.db-feats {
+  list-style: none; margin: 14px auto 0; padding: 0 16px; max-width: 780px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.db-feats li { position: relative; padding-left: 20px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.db-feats li::before {
+  content: ""; position: absolute; left: 4px; top: 7px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+}
+.db-feats li b { color: var(--text); font-weight: 650; }
+
+@keyframes dbSeed {
+  0%, 8% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+  16% { box-shadow: 0 0 0 4px rgba(37,99,235,.10); }
+  26%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+}
+@keyframes dbArrow {
+  0%, 12% { transform: scaleX(.18); opacity: .3; }
+  30%, 100% { transform: scaleX(1); opacity: 1; }
+}
+@keyframes dbRow1 {
+  0%, 16% { opacity: 0; transform: translateY(8px); }
+  28%, 88% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(8px); }
+}
+@keyframes dbRow2 {
+  0%, 36% { opacity: 0; transform: translateY(8px); }
+  48%, 88% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(8px); }
+}
+@keyframes dbRow3 {
+  0%, 56% { opacity: 0; transform: translateY(8px); }
+  68%, 88% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(8px); }
+}
+@keyframes dbNewPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  50% { box-shadow: 0 0 0 4px rgba(220,38,38,.18); }
+}
+
+@media (max-width: 760px) {
+  .db-stage { grid-template-columns: 1fr; }
+  .db-xform { flex-direction: row; gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-page.is-active,
+  .db-seed-box, .db-xform-arrow, .db-ver, .db-chip--new { animation: none !important; }
+  .db-ver { opacity: 1; transform: none; }
+  .db-xform-arrow { transform: scaleX(1); opacity: 1; }
+}
+
+/* =========================================================================
+   Landing P2 · Tools track — animated frequency-split pipeline
+   A 4-phase, auto-advancing walk-through (data-phase 1..4 on .dbt):
+   tasks → rank by frequency → cumulative catalogs T1⊂T2⊂T3 → assign tasks.
+   ========================================================================= */
+.dbt { max-width: 940px; margin: 0 auto; }
+
+.dbt-bar {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 0 0 14px; flex-wrap: wrap;
+}
+.dbt-steps {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+}
+.dbt-steps li {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11.5px; color: var(--muted); font-weight: 600;
+  border: 1px solid var(--border); background: var(--panel); border-radius: 999px;
+  padding: 5px 12px 5px 6px; cursor: pointer; user-select: none;
+  transition: color .2s, border-color .2s, box-shadow .2s, background .2s;
+}
+.dbt-steps li:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-2); }
+.dbt-steps li:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* play / pause toggle (pause = two bars, play = triangle, font-independent) */
+.dbt-play {
+  position: relative; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.dbt-play:hover { border-color: var(--accent); color: var(--text); background: var(--panel-2); }
+.dbt-play::before, .dbt-play::after {
+  content: ""; position: absolute; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 10px; background: currentColor; border-radius: 1px;
+}
+.dbt-play::before { left: 9px; }
+.dbt-play::after { right: 9px; }
+.dbt-play[data-playing="false"]::before {
+  left: 10px; width: 0; height: 0; background: transparent; border-radius: 0;
+  border-left: 9px solid currentColor; border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+}
+.dbt-play[data-playing="false"]::after { display: none; }
+.dbt-steps li b {
+  width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 10.5px; background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--border); transition: background .25s, color .25s, border-color .25s;
+}
+.dbt[data-phase="1"] .dbt-steps li[data-step="1"],
+.dbt[data-phase="2"] .dbt-steps li[data-step="2"],
+.dbt[data-phase="3"] .dbt-steps li[data-step="3"],
+.dbt[data-phase="4"] .dbt-steps li[data-step="4"] {
+  color: var(--text); border-color: var(--accent);
+  box-shadow: 0 6px 16px -10px rgba(37,99,235,.65);
+}
+.dbt[data-phase="1"] .dbt-steps li[data-step="1"] b,
+.dbt[data-phase="2"] .dbt-steps li[data-step="2"] b,
+.dbt[data-phase="3"] .dbt-steps li[data-step="3"] b,
+.dbt[data-phase="4"] .dbt-steps li[data-step="4"] b {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+
+.dbt-stage {
+  display: grid; min-height: 250px; align-items: center;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+}
+/* All four phase layers share one grid cell, so the stage auto-sizes to the
+   tallest phase (no fixed height, no clipping) while we cross-fade between. */
+.dbt-phase {
+  grid-area: 1 / 1; padding: 22px;
+  display: flex; flex-direction: column; justify-content: center; gap: 10px;
+  opacity: 0; transform: translateY(10px); pointer-events: none;
+  transition: opacity .45s ease, transform .45s ease;
+}
+.dbt[data-phase="1"] .dbt-p1,
+.dbt[data-phase="2"] .dbt-p2,
+.dbt[data-phase="3"] .dbt-p3,
+.dbt[data-phase="4"] .dbt-p4 { opacity: 1; transform: none; pointer-events: auto; }
+
+.dbt-caps { display: grid; justify-items: center; margin-top: 12px; }
+.dbt-caps p {
+  grid-area: 1 / 1; width: min(760px, 100%); margin: 0; text-align: center;
+  font-size: 12.5px; color: var(--muted); line-height: 1.5;
+  opacity: 0; transition: opacity .45s ease;
+}
+.dbt-caps p b { color: var(--text); font-weight: 650; }
+.dbt-ink { color: var(--bad); font-weight: 700; }
+.dbt[data-phase="1"] .dbt-caps p[data-cap="1"],
+.dbt[data-phase="2"] .dbt-caps p[data-cap="2"],
+.dbt[data-phase="3"] .dbt-caps p[data-cap="3"],
+.dbt[data-phase="4"] .dbt-caps p[data-cap="4"] { opacity: 1; }
+
+/* tool chip (shared across phases; --tc = per-tool color) */
+.dbt-tool {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px;
+  color: var(--text); background: #fff;
+  border: 1px solid var(--border); border-left: 3px solid var(--tc, var(--accent));
+  border-radius: 6px; padding: 3px 8px;
+}
+.dbt-tool.is-muted { color: var(--muted); background: var(--panel-2); border-left-color: var(--border-strong); opacity: .75; }
+.dbt-tool .dbt-tool-n { color: var(--muted); font-weight: 700; }
+
+/* phase 1 — tasks and their tool sets */
+.dbt-tasklist { display: flex; flex-direction: column; gap: 8px; max-width: 660px; width: 100%; margin: 0 auto; }
+.dbt-task { display: flex; align-items: center; gap: 10px; }
+.dbt-task-tag { flex: 0 0 60px; font-size: 11.5px; font-weight: 700; color: var(--text); }
+.dbt-task-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* phase 2 — ranked frequency bars */
+.dbt-rank { display: flex; flex-direction: column; gap: 9px; max-width: 680px; width: 100%; margin: 0 auto; }
+.dbt-rankrow { display: grid; grid-template-columns: 124px 1fr 62px; align-items: center; gap: 10px; }
+.dbt-rank-name {
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--text);
+  border-left: 3px solid var(--tc); padding-left: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dbt-rank-track { height: 16px; background: var(--panel-2); border-radius: 5px; overflow: hidden; }
+.dbt-rank-bar { display: block; height: 100%; width: var(--w); background: var(--tc); border-radius: 5px; transform-origin: left center; }
+.dbt[data-phase="2"] .dbt-rank-bar { animation: dbtGrow .7s ease both; }
+.dbt-rank-cnt { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.dbt-rank-axis {
+  display: flex; justify-content: space-between; max-width: 680px; width: 100%; margin: 6px auto 0;
+  font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+}
+
+/* phase 3 — cumulative catalogs T1 ⊂ T2 ⊂ T3 */
+.dbt-cats { display: flex; flex-direction: column; gap: 10px; max-width: 740px; width: 100%; margin: 0 auto; }
+.dbt-cat { display: flex; align-items: center; gap: 10px; }
+.dbt-cat-tag { flex: 0 0 28px; font-size: 12px; font-weight: 800; color: var(--text); }
+.dbt-cat-tools { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.dbt-cat-delta { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+
+/* phase 3 cut rationale — per version, which NEW tasks become solvable and the
+   min_new_tasks floor that fixes V1's size. */
+.dbt-cats--cut { gap: 14px; max-width: 780px; }
+.dbt-cutrow { display: flex; flex-direction: column; gap: 4px; }
+.dbt-cut-sub { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding-left: 38px; font-size: 10px; color: var(--muted); }
+.dbt-cut-arrow { color: var(--border-strong); font-size: 12px; }
+.dbt-solv-chip { font-style: normal; font-family: ui-monospace, Menlo, monospace; font-size: 9px; color: var(--good); background: rgba(22,163,74,.10); border: 1px solid rgba(22,163,74,.35); border-radius: 4px; padding: 1px 5px; }
+.dbt-solv-chip.is-none { color: var(--muted); background: var(--panel-2); border-color: var(--border); }
+.dbt-cut-badge { font-size: 9.5px; font-weight: 700; color: var(--muted); }
+.dbt-cut-badge--floor { color: #fff; background: var(--accent); border-radius: 5px; padding: 2px 7px; font-weight: 800; letter-spacing: .2px; }
+.dbt-foot code { font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+
+/* phase 4 — assign tasks to earliest version, labelling new vs old tools */
+/* small lead-in that separates the two T-tagged blocks (the growing roster vs.
+   the per-version routing) so they don't read as a duplicated version list. */
+.dbt-asg-h { max-width: 780px; width: 100%; margin: 16px auto 8px; font-size: 10.5px; color: var(--muted); }
+.dbt-asg-h b { color: var(--text); font-weight: 700; }
+.dbt-assign { display: flex; flex-direction: column; gap: 9px; max-width: 760px; width: 100%; margin: 0 auto; }
+.dbt-asg-ver { display: flex; align-items: flex-start; gap: 10px; }
+.dbt-asg-tag { flex: 0 0 26px; font-size: 12px; font-weight: 800; color: var(--text); padding-top: 7px; }
+.dbt-asg-tasks { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.dbt-asg-task {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+}
+.dbt-asg-name { flex: 0 0 52px; font-size: 11.5px; font-weight: 700; color: var(--text); }
+.dbt-asg-tools { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.dbt-asg-sum { flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--good); white-space: nowrap; }
+
+/* new / old flag carried inside a tool chip */
+.dbt-flag {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 8px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase;
+  padding: 1px 4px; border-radius: 4px; line-height: 1.25;
+}
+.dbt-flag--new { background: var(--accent); color: #fff; }
+.dbt-flag--old { background: transparent; color: var(--muted); border: 1px solid var(--border-strong); }
+
+.dbt[data-phase="4"] .dbt-asg-task { animation: dbtPop .5s ease both; }
+.dbt[data-phase="4"] .dbt-asg-tasks .dbt-asg-task:nth-child(2) { animation-delay: .07s; }
+.dbt[data-phase="4"] .dbt-asg-tasks .dbt-asg-task:nth-child(3) { animation-delay: .14s; }
+
+/* guarantee callout — what the build always holds true */
+.dbt-feats {
+  display: flex; gap: 12px; align-items: flex-start; justify-content: flex-start;
+  max-width: 840px; margin: 16px auto 0; padding: 12px 16px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px;
+}
+.dbt-feats-k {
+  flex: 0 0 auto; margin-top: 2px;
+  font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; font-weight: 800;
+  color: #fff; background: var(--good); padding: 3px 8px; border-radius: 5px;
+}
+.dbt-feats ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.dbt-feats li { position: relative; padding-left: 16px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.dbt-feats li::before {
+  content: ""; position: absolute; left: 3px; top: 7px; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--good);
+}
+.dbt-feats li b { color: var(--text); font-weight: 650; }
+
+/* "Deep dive" CTA under the Tools Guarantee card → opens the full built-dataset
+   detail page (statistics, examples, real-world fit, task browser). Mirrors the
+   Guarantee card width/placement; the accent badge rhymes with .dbt-feats-k. */
+.dbt-cta {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; max-width: 840px; margin: 12px auto 0; padding: 12px 16px;
+  text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(99,102,241,0.08));
+  border: 1px solid rgba(37,99,235,0.30); border-radius: 12px;
+  transition: border-color .18s ease, background .18s ease, transform .12s ease, box-shadow .18s ease;
+}
+.dbt-cta:hover {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, rgba(37,99,235,0.14), rgba(99,102,241,0.14));
+  box-shadow: 0 4px 14px rgba(37,99,235,0.16);
+  transform: translateY(-1px);
+}
+.dbt-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dbt-cta-k {
+  flex: 0 0 auto;
+  font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; font-weight: 800;
+  color: #fff; background: var(--accent); padding: 3px 8px; border-radius: 5px;
+}
+.dbt-cta-tx { flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
+.dbt-cta-tx b { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.dbt-cta-tx i { font-style: normal; font-size: 11px; color: var(--muted); }
+.dbt-cta-arrow {
+  flex: 0 0 auto; font-size: 18px; font-weight: 700; color: var(--accent);
+  transition: transform .18s ease;
+}
+.dbt-cta:hover .dbt-cta-arrow { transform: translateX(3px); }
+
+/* ---------- Skills track additions (latent skills, policy split) ---------- */
+/* skill chip — dashed border signals a latent/oracle skill; --tc per skill */
+.dbt-skill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px;
+  color: var(--text); background: #fff;
+  border: 1px dashed var(--tc, var(--accent-2)); border-radius: 6px; padding: 3px 8px;
+}
+.dbt-skill.is-muted { color: var(--muted); background: var(--panel-2); border-color: var(--border-strong); opacity: .72; }
+.dbt-skill .dbt-tool-n { color: var(--muted); font-weight: 700; }
+
+/* oracle (held-out) caption pill */
+.db-cap-k--hide { background: var(--accent-2); color: #fff; }
+
+/* phase 1 — split & hide the system-prompt policy */
+.dbt-hide { display: grid; grid-template-columns: 1fr auto 1.1fr; align-items: center; gap: 16px; max-width: 860px; width: 100%; margin: 0 auto; }
+.dbt-doc { min-width: 0; }
+.dbt-doc-box { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+.dbt-doc-line { font-size: 10.5px; color: var(--text); background: var(--panel-2); border-left: 3px solid var(--border-strong); border-radius: 6px; padding: 5px 8px; }
+.dbt-doc-line i { font-style: normal; color: var(--muted); }
+.dbt-doc-contract { border-left-color: var(--good); }
+.dbt-xf { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dbt-arrow { position: relative; width: 40px; height: 2px; background: var(--border-strong); }
+.dbt-arrow::after {
+  content: ""; position: absolute; right: -1px; top: -5px;
+  border-left: 8px solid var(--border-strong); border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+.dbt-xf-lab { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.3; }
+.dbt-xf-lab b { color: var(--accent-2); }
+.dbt-skills-wrap { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* phase 2 (skills) — two columns keep the 9-task tag list compact */
+@media (min-width: 580px) {
+  .dbt-tasklist--2col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; max-width: 720px; }
+  .dbt-tasklist--2col .dbt-task-tag { flex-basis: 48px; }
+}
+
+/* phase 3 (skills) — coverage ranking strip above the cumulative versions */
+.dbt-rankstrip { display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap; max-width: 800px; margin: 0 auto 12px; }
+.dbt-rankstrip-lab { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 800; }
+.dbt-rank-sep { color: var(--border-strong); font-weight: 700; }
+
+/* phase 1 (skills) — section router: why each § is kept vs becomes a skill */
+.dbt-rulebar { max-width: 840px; margin: 0 auto 12px; text-align: center; font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.dbt-rulebar b { color: var(--text); font-weight: 650; }
+.dbt-ink-keep { color: var(--good) !important; font-weight: 700; }
+.dbt-ink-skill { color: var(--accent-2) !important; font-weight: 700; }
+.dbt-route { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 860px; width: 100%; margin: 0 auto; align-items: start; }
+/* Left column stacks KEEP over DROP so the short KEEP bin doesn't leave a gap
+   beside the tall HIDE bin; the dashed DROP fills the space underneath it. */
+.dbt-route-l { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dbt-bin { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px 4px; background: var(--panel); }
+.dbt-bin--keep { border-color: rgba(22, 163, 74, .45); }
+.dbt-bin--skill { border-color: rgba(99, 102, 241, .45); border-style: dashed; }
+.dbt-bin-h { font-size: 9.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+.dbt-bin-k { font-weight: 800; padding: 2px 6px; border-radius: 5px; color: #fff; margin-right: 6px; letter-spacing: .5px; }
+.dbt-bin-k--keep { background: var(--good); }
+.dbt-bin-k--skill { background: var(--accent-2); }
+.dbt-sec { display: flex; flex-direction: column; gap: 4px; padding: 7px 2px; border-top: 1px solid var(--border); }
+.dbt-bin-h + .dbt-sec { border-top: 0; }
+.dbt-sec-top { display: flex; align-items: center; gap: 8px; }
+.dbt-sec-t { font-size: 11px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; }
+.dbt-sec-ex { font-size: 9.5px; color: var(--muted); line-height: 1.45; border-left: 2px solid var(--border-strong); padding-left: 8px; }
+.dbt-bin--keep .dbt-sec-ex { border-left-color: rgba(22, 163, 74, .5); }
+.dbt-bin--skill .dbt-sec-ex { border-left-color: rgba(99, 102, 241, .5); }
+.dbt-sec-arrow { color: var(--muted); }
+/* 3rd outcome — glossary parsed only for tagging (not shown, not a skill) */
+.dbt-bin--tag { border-color: var(--border-strong); border-style: dashed; }
+.dbt-drop { margin: 0; max-width: none; }
+.dbt-bin-k--tag { background: var(--muted); }
+.dbt-badge--tag { background: rgba(100, 116, 139, .16); color: var(--muted); }
+.dbt-bin--tag .dbt-sec-ex { border-left-color: var(--border-strong); font-family: ui-monospace, Menlo, monospace; }
+.dbt-foot { max-width: 840px; margin: 12px auto 0; text-align: center; font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+.dbt-foot b { color: var(--text); font-weight: 650; }
+.dbt-badge { flex: 0 0 auto; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; padding: 1px 5px; border-radius: 4px; }
+.dbt-badge--keep { background: rgba(22, 163, 74, .12); color: var(--good); }
+.dbt-badge--skill { background: rgba(99, 102, 241, .12); color: var(--accent-2); }
+
+/* phase 1 (skills) — the SOURCE the bins are carved from: one system prompt */
+.dbt-src { margin: 0 auto; max-width: 640px; width: 100%; }
+.dbt-src-cap { text-align: center; font-size: 11px; color: var(--muted); margin-bottom: 7px; }
+.dbt-src-cap b { color: var(--text); font-weight: 650; }
+.dbt-src-doc { border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); padding: 9px 12px; }
+.dbt-src-title { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 700; color: var(--text); padding-bottom: 6px; margin-bottom: 5px; border-bottom: 1px solid var(--border); }
+.dbt-src-secs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; }
+.dbt-src-secs li { font-size: 10px; color: var(--muted); padding: 2px 0; }
+.dbt-src-num { color: var(--accent-2); font-weight: 700; font-family: ui-monospace, Menlo, monospace; margin-right: 5px; }
+.dbt-splitar { display: flex; flex-direction: column; align-items: center; gap: 5px; margin: 7px auto 2px; }
+.dbt-splitar-line { position: relative; width: 2px; height: 16px; background: var(--border-strong); }
+.dbt-splitar-line::after { content: ""; position: absolute; left: -4px; bottom: -2px; border-top: 8px solid var(--border-strong); border-left: 5px solid transparent; border-right: 5px solid transparent; }
+.dbt-splitar-lab { max-width: 700px; text-align: center; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.dbt-splitar-lab b { color: var(--text); font-weight: 650; }
+@media (max-width: 560px) { .dbt-src-secs { grid-template-columns: 1fr; } }
+
+/* phase 2 (skills) — verifier → signature → match tagging pipeline */
+.dbt-tag { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; max-width: 900px; width: 100%; margin: 0 auto; align-items: start; }
+.dbt-tag-how { display: flex; flex-direction: column; gap: 9px; }
+.dbt-tag-step { display: flex; flex-direction: column; gap: 5px; }
+/* Normal text flow (NOT flex): a flex row turns each text run + <b>/chip into
+   a separate flex item and trims the whitespace between them, jamming words
+   together ("fact by table" -> "factby table"). Block flow keeps the badge
+   inline and preserves spacing + reading order. */
+.dbt-tag-h { font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.55; }
+.dbt-tag-h b { font-weight: 700; }
+.dbt-tag-h i { font-weight: 400; font-style: normal; color: var(--muted); font-size: 10px; }
+.dbt-tag-n { width: 16px; height: 16px; border-radius: 50%; background: var(--accent-2); color: #fff; font-size: 9.5px; font-weight: 800; display: inline-grid; place-items: center; margin-right: 7px; vertical-align: middle; }
+.dbt-sql { margin: 0; font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-left: 3px solid var(--accent-2); border-radius: 6px; padding: 7px 9px; white-space: pre-wrap; }
+.dbt-sigs { display: flex; gap: 6px; flex-wrap: wrap; padding-left: 23px; }
+.dbt-sig { display: inline-flex; align-items: center; gap: 5px; font-family: ui-monospace, Menlo, monospace; font-size: 10px; padding: 2px 4px 2px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); }
+.dbt-sig b { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 8px; font-weight: 800; text-transform: uppercase; padding: 1px 4px; border-radius: 4px; }
+.dbt-sig--col { color: var(--muted); }
+.dbt-sig--col b { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border-strong); }
+.dbt-sig--pair { color: var(--text); border-color: var(--accent-2); }
+.dbt-sig--pair b { background: var(--accent-2); color: #fff; }
+.dbt-cands { display: flex; flex-direction: column; gap: 5px; padding-left: 23px; }
+.dbt-cand { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); opacity: .6; }
+.dbt-cand.is-tag { opacity: 1; border-color: var(--accent-2); background: rgba(99, 102, 241, .07); }
+.dbt-cand-idx { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.dbt-cand-idx code { font-family: ui-monospace, Menlo, monospace; font-size: 9px; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
+.dbt-cand-score { font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+.dbt-cand-mark { font-size: 10px; font-weight: 800; color: var(--muted); }
+.dbt-cand.is-tag .dbt-cand-mark { color: var(--good); }
+.dbt-tag-out .dbt-tag-h { font-size: 11.5px; }
+.dbt-tag-res { border-left: 1px solid var(--border); padding-left: 16px; }
+.dbt-tag-res-h { font-size: 9.5px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .4px; }
+.dbt-tag-res .dbt-tasklist { gap: 5px; }
+.dbt-tag-res .dbt-task-tag { flex-basis: 48px; }
+
+/* phase 3 (skills) — greedy version-cut trace (how many skills per T is derived) */
+.dbt-greedy { max-width: 660px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 7px; }
+.dbt-greedy-rule { font-size: 11px; color: var(--muted); line-height: 1.5; text-align: center; margin-bottom: 4px; }
+.dbt-greedy-rule b { color: var(--text); font-weight: 650; }
+.dbt-greedy-rule i { font-style: normal; }
+.dbt-gstep { display: grid; grid-template-columns: 168px 1fr 46px; align-items: center; gap: 10px; }
+.dbt-gadd { min-width: 0; font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.dbt-gtrack { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.dbt-gtrack i { display: block; height: 100%; width: var(--w); background: var(--accent-2); border-radius: 4px; transition: width .5s ease; }
+.dbt-gcount { font-size: 10px; color: var(--muted); white-space: nowrap; text-align: right; }
+.dbt-gstep.is-cut .dbt-gtrack i { background: var(--good); }
+.dbt-gcut { grid-column: 1 / -1; font-size: 10.5px; color: var(--good); font-weight: 700; padding: 1px 0 7px 178px; border-bottom: 1px dashed rgba(22, 163, 74, .4); margin-bottom: 1px; }
+
+@media (max-width: 720px) {
+  .dbt-hide { grid-template-columns: 1fr; gap: 12px; }
+  .dbt-arrow { transform: rotate(90deg); }
+  .dbt-route { grid-template-columns: 1fr; }
+  .dbt-tag { grid-template-columns: 1fr; gap: 12px; }
+  .dbt-tag-res { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 10px; }
+  .dbt-gstep { grid-template-columns: 130px 1fr 42px; }
+  .dbt-gcut { padding-left: 0; }
+}
+
+@keyframes dbtGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes dbtPop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 720px) {
+  .dbt-rankrow { grid-template-columns: 100px 1fr 54px; }
+  .dbt-asg-name { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dbt-phase { transition: none; }
+  .dbt[data-phase] .dbt-rank-bar,
+  .dbt[data-phase] .dbt-asg-task { animation: none !important; }
+}
+
+/* ---------- Agents track additions (skill->agent, derived tools) ---------- */
+/* agent chip — solid border + square glyph signals a GIVEN specialist agent
+   (vs the dashed latent skill chip and the left-accent tool chip); --tc/skill */
+.dbt-agent {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px;
+  color: var(--text); background: #fff;
+  border: 1px solid var(--tc, var(--accent-2)); border-radius: 6px; padding: 3px 8px 3px 7px;
+}
+.dbt-agent::before { content: ""; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 2px; background: var(--tc, var(--accent-2)); }
+.dbt-agent.is-muted { color: var(--muted); background: var(--panel-2); border-color: var(--border-strong); opacity: .72; }
+.dbt-agent.is-muted::before { background: var(--border-strong); }
+/* a tool-name mini chip (an agent's scoped tools) */
+.dbt-mini { font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+
+/* phase 1 (agents) — component matrix: which of the 5 parts differ across agents */
+.dbt-amat { max-width: 880px; width: 100%; margin: 0 auto; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--panel); }
+.dbt-amat-head, .dbt-amat-row { display: grid; grid-template-columns: 96px 1fr 1fr 132px; align-items: center; gap: 12px; padding: 8px 12px; }
+.dbt-amat-head { background: var(--panel-2); border-bottom: 1px solid var(--border); font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.dbt-amat-head > span { display: flex; align-items: center; }
+.dbt-amat-row + .dbt-amat-row { border-top: 1px solid var(--border); }
+.dbt-amat-row.is-diff { border-left: 3px solid var(--accent-2); }
+.dbt-amat-row.is-same { border-left: 3px solid var(--good); }
+.dbt-amat-k { font-size: 11px; font-weight: 700; color: var(--text); }
+.dbt-amat-v { min-width: 0; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 10px; color: var(--text); line-height: 1.5; }
+.dbt-amat-v i { font-style: normal; color: var(--muted); font-size: 9.5px; }
+.dbt-amat-v code { font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
+.dbt-amat-span { grid-column: 2 / 4; }
+.dbt-amat-vary { display: flex; flex-direction: column; gap: 1px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; }
+.dbt-amat-vary small { font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 9px; color: var(--muted); }
+.dbt-amat-vary--diff { color: var(--accent-2); }
+.dbt-amat-vary--same { color: var(--good); }
+@media (max-width: 640px) {
+  .dbt-amat-head, .dbt-amat-row { grid-template-columns: 76px 1fr 1fr 92px; gap: 8px; }
+}
+
+/* phase 2 (agents) — derive each agent's tools; one task's tools split -> 2 agents
+   (reuses the skills .dbt-tag two-column pipeline) */
+.dbt-attr { display: flex; flex-direction: column; gap: 5px; padding-left: 23px; }
+.dbt-attr-line { display: flex; gap: 6px; flex-wrap: wrap; padding-left: 23px; }
+.dbt-attr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dbt-attr-ar { color: var(--muted); font-weight: 700; }
+.dbt-agtools { display: flex; flex-direction: column; gap: 6px; }
+.dbt-agrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dbt-agrow-tools { display: flex; gap: 5px; flex-wrap: wrap; }
+
+/* phase 4 (agents) — flag tasks that need >=2 agents (coordination) */
+.dbt-asg-task.is-coord { border-left: 3px solid var(--accent-2); }
+.dbt-asg-task.is-coord .dbt-asg-sum { color: var(--accent-2); }
+.dbt-asg-sum b { font-weight: 800; }
+
+/* ===== Agents = CAPABILITIES (capability model) ======================== */
+/* phase 1 — tool universe -> disjoint capability bundles (the roster) */
+.dbt-uni-fig { max-width: 760px; width: 100%; margin: 0 auto; }
+.dbt-uni-cap { font-size: 9.5px; color: var(--muted); margin-bottom: 6px; }
+.dbt-uni { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; border: 1px dashed var(--border-strong); border-radius: 10px; padding: 10px; background: var(--panel); }
+.dbt-ctool { font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-left: 3px solid var(--tc, var(--accent)); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
+.dbt-ctool.is-muted { opacity: .5; }
+.dbt-capgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); gap: 8px; max-width: 880px; width: 100%; margin: 0 auto; }
+.dbt-capbin { border: 1px solid var(--border); border-top: 2px solid var(--tc, var(--accent)); border-radius: 9px; padding: 7px 9px; background: var(--panel); }
+.dbt-capbin-h { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 6px; flex-wrap: wrap; }
+.dbt-capbin-dot { width: 8px; height: 8px; border-radius: 2px; background: var(--tc, var(--accent)); }
+.dbt-capbin-ent { font-size: 9px; font-weight: 500; color: var(--muted); }
+.dbt-capbin-ent code { font-family: ui-monospace, Menlo, monospace; }
+.dbt-capbin-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* phase 2 — the assembled COMPLETE agent + re-home-by-table */
+.dbt-tbl { font-family: ui-monospace, Menlo, monospace; font-size: 9px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+.dbt-acard { border: 1px solid var(--border); border-left: 3px solid var(--tc, var(--accent)); border-radius: 10px; padding: 9px 11px; background: var(--panel); display: flex; flex-direction: column; gap: 6px; }
+.dbt-acard-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dbt-acard-tag { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.dbt-acard-row { display: flex; gap: 8px; align-items: baseline; font-size: 10px; }
+.dbt-acard-k { flex: 0 0 56px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+.dbt-acard-v { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--text); }
+.dbt-acard-v i { font-style: normal; color: var(--muted); font-size: 9px; }
+.dbt-acard-complete { font-size: 10px; font-weight: 700; color: var(--good); background: rgba(22,163,74,.08); border: 1px solid rgba(22,163,74,.30); border-radius: 7px; padding: 5px 8px; }
+
+/* phase 3 — "why >=2 agents is the norm" stat rows */
+.dbt-stats { display: flex; flex-direction: column; gap: 6px; }
+.dbt-stat { display: flex; align-items: baseline; gap: 8px; }
+.dbt-stat-d { flex: 0 0 38px; font-size: 10px; font-weight: 700; color: var(--text); text-transform: uppercase; }
+.dbt-stat-n { font-size: 12px; font-weight: 800; color: var(--accent-2); font-family: ui-monospace, Menlo, monospace; }
+.dbt-stat-l { font-size: 9.5px; color: var(--muted); }
+.dbt-stat-note { font-size: 9.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+.dbt-stat-note b { color: var(--text); }
+
+/* ======================================================================== */
+/* Skills / Benchmark (#skill-datasets · SKDS) — reuses ds-/evo-/rw- styles, */
+/* these are the few skill-specific additions.                              */
+/* ======================================================================== */
+.skds-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: auto;
+}
+.skds-note code {
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Step 3 — nested cumulative libraries (stacked bars) */
+.skds-rings {
+  display: flex; align-items: flex-end; gap: 28px;
+  padding: 8px 4px 0; min-height: 180px;
+}
+.skds-ring-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.skds-ring-bar {
+  width: 64px; height: 150px;
+  display: flex; flex-direction: column-reverse;
+  border-radius: 6px 6px 0 0; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.skds-ring-seg { width: 100%; }
+.skds-ring-seg.carried { background: rgba(100,116,139,0.30); }
+.skds-ring-seg.new { background: var(--accent); }
+.skds-ring-cap { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; }
+.skds-ring-cap b { font-size: 13px; }
+
+/* Step 4 — task assignment columns */
+.skds-assign {
+  display: flex; align-items: flex-end; gap: 28px;
+  padding: 8px 4px 0; min-height: 190px;
+}
+.skds-assign-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.skds-assign-bar {
+  width: 70px; height: 150px;
+  display: flex; flex-direction: column-reverse;
+  border-radius: 6px 6px 0 0;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.skds-assign-fill {
+  width: 100%; border-radius: 6px 6px 0 0;
+  display: flex; align-items: flex-start; justify-content: center;
+  min-height: 18px;
+}
+.skds-assign-n { color: #fff; font-size: 11px; font-weight: 800; padding-top: 3px; }
+.skds-assign-cap { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; text-align: center; max-width: 110px; }
+.skds-assign-cap .small { font-size: 10px; }
+
+/* Step 5 — guarantees */
+.skds-feats { margin: 0 0 14px; padding-left: 18px; line-height: 1.6; }
+.skds-feats li { margin-bottom: 4px; }
+.skds-active-split { display: flex; gap: 24px; flex-wrap: wrap; }
+.skds-active-split > div { flex: 1; min-width: 240px; }
+
+/* Real-world fit — stats table + PNG figures */
+.skds-rw-stats { padding: 16px; margin-bottom: 14px; }
+.rw-stats-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rw-stats-table th, .rw-stats-table td {
+  padding: 6px 10px; text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+.rw-stats-table th:first-child, .rw-stats-table td.rw-metric-name { text-align: left; }
+.rw-stats-table thead th { color: var(--muted); font-weight: 600; }
+.rw-stats-table .rw-real-col { color: var(--warn); font-weight: 700; }
+.skds-rw-img {
+  width: 100%; height: auto; display: block;
+  border-radius: 6px; border: 1px solid var(--border);
+  background: #fff;
+}
+
+/* Task browser — list + detail */
+.skds-li-split {
+  font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.skds-li-n { margin-left: auto; font-size: 11px; color: var(--muted); }
+.skds-prompt {
+  white-space: pre-wrap; line-height: 1.55;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; font-size: 13px;
+}
+.skds-skill-list { display: flex; flex-direction: column; gap: 10px; }
+.skds-skill-item {
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+  border-radius: 0 8px 8px 0; padding: 8px 12px;
+}
+.skds-skill-name { font-weight: 700; }
+.skds-skill-slug {
+  font-size: 11px; color: var(--muted);
+  background: transparent; padding: 0;
+}
+.skds-skill-item .small { margin-top: 4px; }
+
+/* Expandable full skill content (SKILL.md + references/) */
+.skds-skill-full { margin-top: 10px; }
+.skds-skill-full > summary {
+  cursor: pointer; font-size: 11px; font-weight: 700;
+  color: var(--accent); user-select: none; list-style: revert;
+}
+.skds-skill-full-body { margin-top: 8px; }
+.skds-file-h {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+  margin: 12px 0 4px;
+}
+.skds-file-pre {
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+  font-size: 12px; line-height: 1.55;
+  max-height: 460px; overflow: auto; margin: 0;
+}
+.skds-ref { margin: 4px 0; }
+.skds-ref > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  color: var(--text); user-select: none;
+}
+.skds-ref > .skds-file-pre { margin-top: 6px; }
+
+/* ----- Agents benchmark (AGDS) — extras over the shared skds-/evo- styles -- */
+/* Step 4: hatched band marking the multi-agent (coordination) share of a bar */
+.skds-assign-fill { position: relative; }
+.agds-assign-multi {
+  position: absolute; top: 0; left: 0; right: 0;
+  background-image: repeating-linear-gradient(
+    45deg, rgba(255,255,255,0.55) 0 4px, rgba(255,255,255,0) 4px 8px);
+  border-bottom: 1px dashed rgba(255,255,255,0.9);
+  pointer-events: none;
+}
+/* Task-list multi-agent marker + per-agent tool-scope badge */
+.agds-li-multi {
+  font-size: 10px; font-weight: 800; color: #fff;
+  background: var(--warn, #d97706); border-radius: 6px;
+  padding: 0 5px; margin-left: 4px;
+}
+.agds-tool-badge {
+  font-size: 10px; font-weight: 700; color: var(--accent);
+  background: rgba(37,99,235,0.10); border: 1px solid rgba(37,99,235,0.25);
+  border-radius: 999px; padding: 1px 8px; margin-left: 8px;
+}
+.agds-agent-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+

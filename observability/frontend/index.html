@@ -3,36 +3,70 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MAS-Evolve Observability</title>
+    <title>EvoHarnessBench</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <button class="brand brand-button" data-tab="landing" title="Back to MAS-Evolve home">
+      <button class="brand brand-button" data-tab="landing" title="Back to EvoHarnessBench home">
         <span class="logo">EO</span>
-        <h1>MAS-Evolve Observability</h1>
+        <h1>EvoHarnessBench</h1>
       </button>
       <nav class="tabs" id="tabs">
-        <button data-tab="landing" class="tab tab-root" title="Root">⌂</button>
-        <button data-tab="home" class="tab">Overview</button>
-        <button data-tab="datasets" class="tab">Benchmark</button>
-        <button data-tab="results" class="tab">Results</button>
-        <button data-tab="insights" class="tab">Insights</button>
+        <!-- Shown only on the Tools "Benchmark" detail view (which now lives
+             under Dataset building); visibility is toggled in showTab(). -->
+        <button data-db-back="tools" id="back-to-db" class="tab tab-back tab-back-hidden" type="button" title="Back to dataset building">&larr; Back to dataset building</button>
+        <span class="tab-group tab-group-tools">
+          <span class="tab-context">Tools&nbsp;/</span>
+          <button data-tab="home" class="tab">Overview</button>
+          <button data-tab="results" class="tab">Results</button>
+          <button data-tab="insights" class="tab">Insights</button>
+        </span>
+        <span class="tab-group tab-group-skills">
+          <span class="tab-context">Skills&nbsp;/</span>
+          <button data-tab="skill-results" class="tab">Results</button>
+        </span>
+        <span class="tab-group tab-group-agents">
+          <span class="tab-context">Agents&nbsp;/</span>
+          <button data-tab="agents-results" class="tab">Results</button>
+        </span>
       </nav>
     </header>
 
     <main>
       <!-- ============ ROOT LANDING ============ -->
       <section id="landing" class="view active landing-view">
-        <div class="landing-hero">
-          <div class="landing-eyebrow">MAS-Evolve</div>
-          <h2 class="landing-title">What can evolve in a multi-agent system?</h2>
-          <p class="landing-sub">
-            Three orthogonal axes a multi-agent stack can co-evolve along.
-            Pick one to inspect what we have today, what is being explored,
-            and what is still to come.
-          </p>
-        </div>
+        <!-- 3-page landing stepper: Framework · Dataset building · Evaluation & observability -->
+        <nav class="lp-steps" aria-label="Landing sections">
+          <button class="lp-step is-active" data-lp="1" type="button">
+            <span class="lp-step-no">1</span>
+            <span class="lp-step-tx">
+              <b>Agent framework</b>
+              <i>how an agentic system is wired</i>
+            </span>
+          </button>
+          <span class="lp-step-sep" aria-hidden="true"></span>
+          <button class="lp-step" data-lp="2" type="button">
+            <span class="lp-step-no">2</span>
+            <span class="lp-step-tx">
+              <b>Dataset building</b>
+              <i>how the 3 evolving benchmarks are built</i>
+            </span>
+          </button>
+          <span class="lp-step-sep" aria-hidden="true"></span>
+          <button class="lp-step" data-lp="3" type="button">
+            <span class="lp-step-no">3</span>
+            <span class="lp-step-tx">
+              <b>Evaluation &amp; observability</b>
+              <i>open the three live dashboards</i>
+            </span>
+          </button>
+        </nav>
+
+        <div class="lp-pages">
+
+        <!-- ===================== P1 · Agent framework ===================== -->
+        <section class="lp-page is-active" data-lp-page="1" aria-label="Agent framework">
 
         <!-- Higher-level picture, in two stacked panels:
               1. System flow      — Task + Capability E feed a Lead agent
@@ -45,9 +79,8 @@
                  Skills, Agents) match the three cards below. -->
         <figure class="cd-figure" aria-label="System flow and its evolving capability harness">
           <figcaption class="cd-figcap">
-            <span class="cd-figcap-eyebrow">Higher-level picture</span>
             <span class="cd-figcap-title">
-              A multi-agent system is wired from a
+              An agentic system is wired from a
               <span class="cd-figcap-hl">capability harness</span>
               — and the three axes we evolve are inside it.
             </span>
@@ -244,6 +277,67 @@
             </section>
           </div>
         </figure>
+        </section><!-- /P1 -->
+
+        <!-- ==================== P2 · Dataset building ===================== -->
+        <section class="lp-page" data-lp-page="2" aria-label="Dataset building">
+          <figure class="cd-figure db-figure">
+            <figcaption class="cd-figcap">
+              <span class="cd-figcap-eyebrow">How the benchmarks are built</span>
+              <span class="cd-figcap-title">
+                One seed dataset
+                <span class="cd-figcap-hl">EnterpriseOps-Gym</span>
+                — sliced by frequency into evolving versions, one track per axis.
+              </span>
+            </figcaption>
+            <!-- The tracks (Tools · Skills · Agents) + the build animation are
+                 rendered by the DB module in app.js into #db-root. -->
+            <div id="db-root" class="db"></div>
+          </figure>
+        </section><!-- /P2 -->
+
+        <!-- ============== P3 · Evaluation & observability ============== -->
+        <section class="lp-page" data-lp-page="3" aria-label="Evaluation and observability dashboards">
+
+        <!-- Shared framing for all three dashboards: the research questions the
+             evaluation answers, and the system × method matrix it runs over. The
+             per-card prose was removed in favour of this single shared frame. -->
+        <header class="lp-eval-intro">
+          <span class="lp-eval-eyebrow">Research questions</span>
+          <div class="lp-rqs">
+            <article class="lp-rq">
+              <span class="lp-rq-num"><small>RQ</small>1</span>
+              <p>How do <b>agentic systems</b> perform in the <b>evolving</b> setting?</p>
+            </article>
+            <article class="lp-rq">
+              <span class="lp-rq-num"><small>RQ</small>2</span>
+              <p>How does the <b>adaptation method</b> (memory) affect performance?</p>
+            </article>
+            <article class="lp-rq">
+              <span class="lp-rq-num"><small>RQ</small>3</span>
+              <p>What <b>matters most</b> within the adaptation method (memory)?</p>
+            </article>
+            <article class="lp-rq">
+              <span class="lp-rq-num"><small>RQ</small>4</span>
+              <p>How do <b>advanced</b> adaptation methods (memory) perform in our new settings?</p>
+            </article>
+          </div>
+
+          <div class="lp-frame">
+            <span class="lp-frame-title">Evaluation framework</span>
+            <div class="lp-frame-axis">
+              <span class="lp-frame-k">Systems</span>
+              <span class="lp-frame-chip">Single-agent</span>
+              <span class="lp-frame-chip">Multi-agent</span>
+            </div>
+            <span class="lp-frame-div" aria-hidden="true"></span>
+            <div class="lp-frame-axis">
+              <span class="lp-frame-k">Methods</span>
+              <span class="lp-frame-chip">Simple memory <i>· ablation</i></span>
+              <span class="lp-frame-chip">Advanced memory</span>
+            </div>
+          </div>
+        </header>
 
         <div class="landing-grid">
           <!-- ====== Tools ====== -->
@@ -252,11 +346,6 @@
               <span class="landing-card-status status-live">Live</span>
               <h3>Tools</h3>
             </div>
-            <p class="landing-card-desc">
-              How the tool catalog evolves over time — and how agent
-              memory, selection, and usage hold up under capability drift.
-            </p>
-
             <div class="tools-anim" aria-hidden="true">
               <div class="tools-anim-stages">
                 <!-- ============================== T1 ============================== -->
@@ -479,7 +568,7 @@
               </div>
             </div>
 
-            <span class="landing-card-cta">Open tools observability →</span>
+            <span class="landing-card-cta">Open tool evaluation &amp; observability →</span>
           </button>
 
           <!-- ====== Skills ====== -->
@@ -489,20 +578,11 @@
                must SELF-EVOLVE — author its own covering skills (skill.write),
                then SELECT & FOLLOW them. Pressure = coverage gaps + redundancy
                + follow mistakes as more underlying skills are required. -->
-          <div class="landing-card landing-card--skills">
+          <button class="landing-card landing-card--skills" data-tab="skill-results" type="button">
             <div class="landing-card-head">
-              <span class="landing-card-status status-preview">Preview</span>
+              <span class="landing-card-status status-live">Live</span>
               <h3>Skills</h3>
             </div>
-            <p class="landing-card-desc">
-              The skill library is <strong>latent and expanding</strong>: a held-out
-              oracle library grows over time (S₁⊊S₂⊊…) and is never shown. We test
-              whether an agent can <strong>self-evolve</strong> — author its own
-              reusable skills (analogues of the oracle), then
-              <strong>select &amp; follow</strong> them — as the underlying library
-              keeps growing.
-            </p>
-
             <div class="tools-anim skills-anim" aria-hidden="true">
               <div class="tools-anim-stages">
                 <!-- ============================== T1 ============================== -->
@@ -744,35 +824,157 @@
               </div>
             </div>
 
-            <span class="landing-card-cta landing-card-cta--muted">Self-evolving skills · benchmark in progress</span>
-          </div>
+            <span class="landing-card-cta">Open skill evaluation &amp; observability →</span>
+          </button>
 
           <!-- ====== Agents ====== -->
-          <div class="landing-card landing-card--agents landing-card--todo" aria-disabled="true">
+          <button class="landing-card landing-card--agents" data-tab="agents-results" type="button">
             <div class="landing-card-head">
-              <span class="landing-card-status status-todo">TODO</span>
+              <span class="landing-card-status status-live">Live</span>
               <h3>Agents</h3>
             </div>
-            <p class="landing-card-desc">
-              How agent roles, hierarchies, and routing policies should
-              themselves evolve as the surrounding tool and skill catalogs
-              shift. Not yet instrumented.
-            </p>
-            <div class="landing-card-placeholder">
-              <div class="placeholder-row">
-                <span class="placeholder-bar w-50"></span>
-                <span class="placeholder-bar w-40"></span>
+            <!-- ORCHESTRATION-centric figure (deliberately UNLIKE the Tools card:
+                 no tool squares, no linear tool-call trajectory). Each column is a
+                 delegation tree — a lead ORCHESTRATOR fans delegation lines down
+                 onto a roster of SUB-AGENTS, each drawn as an agent silhouette (a
+                 sub-agent *is* an agent). Across T₁..T₄ the roster GROWS (A₁⊊A₂⊊…);
+                 the lead delegates + coordinates the right specialists while
+                 carried agents become distractors — until it MISROUTES (red) and
+                 the task verdict flips ✗. -->
+            <div class="tools-anim agents-anim" aria-hidden="true">
+              <div class="tools-anim-stages">
+                <!-- ============================== T1 ============================== -->
+                <!-- roster=2 · single-subtask: orchestrator delegates to 1 sub-agent → ✓ -->
+                <div class="tools-anim-stage" data-stage="T1">
+                  <div class="tools-anim-label">T₁</div>
+                  <div class="orch-lead">
+                    <svg class="agent-icon agent-icon--lead" viewBox="0 0 22 24" style="--d:.30s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <span class="orch-tag" style="--d:.40s">orchestrator</span>
+                  </div>
+                  <!-- delegation fan: one-to-many spawn = the orchestration signal. -->
+                  <svg class="orch-fan" viewBox="0 0 100 18" preserveAspectRatio="none">
+                    <path class="spawn" d="M 50 0 L 30 18" style="--d:.85s"/>
+                  </svg>
+                  <!-- roster of sub-agents (each an AGENT, not a tool). -->
+                  <div class="agent-pool">
+                    <span class="sub-agent is-spawn" style="--d:.50s; --ds:1.05s"><i class="sa-res sa-res--ok">✓</i></span>
+                    <span class="sub-agent is-idle"  style="--d:.60s"></span>
+                  </div>
+                  <div class="orch-verdict orch-verdict--ok" style="--d:1.25s">task ✓</div>
+                </div>
+
+                <!-- ============================== T2 ============================== -->
+                <!-- roster=3 (+1 new) · task needs 2 → orchestrator delegates &
+                     COORDINATES 2 sub-agents; both run → ✓ -->
+                <div class="tools-anim-stage" data-stage="T2">
+                  <div class="tools-anim-label">T₂</div>
+                  <div class="orch-lead">
+                    <svg class="agent-icon agent-icon--lead" viewBox="0 0 22 24" style="--d:.95s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <span class="orch-tag" style="--d:1.05s">orchestrator</span>
+                  </div>
+                  <!-- two delegation lines = the lead coordinating two sub-agents. -->
+                  <svg class="orch-fan" viewBox="0 0 100 18" preserveAspectRatio="none">
+                    <path class="spawn" d="M 50 0 L 24 18" style="--d:1.55s"/>
+                    <path class="spawn" d="M 50 0 L 76 18" style="--d:1.70s"/>
+                  </svg>
+                  <div class="agent-pool">
+                    <span class="sub-agent is-spawn" style="--d:1.15s; --ds:1.90s"><i class="sa-res sa-res--ok">✓</i></span>
+                    <span class="sub-agent is-idle"  style="--d:1.25s"></span>
+                    <span class="sub-agent is-spawn is-new" style="--d:1.35s; --ds:2.00s"><i class="sa-res sa-res--ok">✓</i></span>
+                  </div>
+                  <div class="orch-verdict orch-verdict--ok" style="--d:2.25s">task ✓</div>
+                </div>
+
+                <!-- ============================== T3 ============================== -->
+                <!-- roster=4 (+2 new) · DISTRACTORS appear; the lead still delegates
+                     to the 2 right specialists and avoids the distractors → ✓ -->
+                <div class="tools-anim-stage" data-stage="T3">
+                  <div class="tools-anim-label">T₃</div>
+                  <div class="orch-lead">
+                    <svg class="agent-icon agent-icon--lead" viewBox="0 0 22 24" style="--d:1.70s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <span class="orch-tag" style="--d:1.80s">orchestrator</span>
+                  </div>
+                  <svg class="orch-fan" viewBox="0 0 100 18" preserveAspectRatio="none">
+                    <path class="spawn" d="M 50 0 L 16 18" style="--d:2.40s"/>
+                    <path class="spawn" d="M 50 0 L 58 18" style="--d:2.55s"/>
+                  </svg>
+                  <!-- two carried sub-agents are now DISTRACTORS for this task. -->
+                  <div class="agent-pool">
+                    <span class="sub-agent is-spawn" style="--d:1.90s; --ds:2.75s"><i class="sa-res sa-res--ok">✓</i></span>
+                    <span class="sub-agent is-distract" style="--d:2.00s"></span>
+                    <span class="sub-agent is-spawn is-new" style="--d:2.10s; --ds:2.85s"><i class="sa-res sa-res--ok">✓</i></span>
+                    <span class="sub-agent is-distract is-new" style="--d:2.20s"></span>
+                  </div>
+                  <div class="orch-verdict orch-verdict--ok" style="--d:3.30s">task ✓</div>
+                </div>
+
+                <!-- ============================== T4 ============================== -->
+                <!-- roster=6 (+2 new) · distractors dominate: the lead MISROUTES to a
+                     carried distractor (red line + red sub-agent ✗) and under-
+                     coordinates the rest — task verdict flips ✗ -->
+                <div class="tools-anim-stage" data-stage="T4">
+                  <div class="tools-anim-label">T₄</div>
+                  <div class="orch-lead">
+                    <svg class="agent-icon agent-icon--lead" viewBox="0 0 22 24" style="--d:2.55s">
+                      <circle class="ag-head" cx="11" cy="7" r="4"/>
+                      <path   class="ag-body" d="M 3 23 Q 3 13.5, 11 13.5 Q 19 13.5, 19 23 Z"/>
+                    </svg>
+                    <span class="orch-tag" style="--d:2.65s">orchestrator</span>
+                  </div>
+                  <!-- one good delegation + one MISROUTE (red) to a distractor. -->
+                  <svg class="orch-fan" viewBox="0 0 100 18" preserveAspectRatio="none">
+                    <path class="spawn"      d="M 50 0 L 14 18" style="--d:3.45s"/>
+                    <path class="spawn--bad" d="M 50 0 L 46 18" style="--d:3.60s"/>
+                  </svg>
+                  <div class="agent-pool">
+                    <span class="sub-agent is-spawn" style="--d:2.75s; --ds:3.80s"><i class="sa-res sa-res--ok">✓</i></span>
+                    <span class="sub-agent is-distract" style="--d:2.85s"></span>
+                    <span class="sub-agent is-misroute" style="--d:2.95s; --ds:3.95s"><i class="sa-res sa-res--bad">✗</i></span>
+                    <span class="sub-agent is-distract" style="--d:3.05s"></span>
+                    <span class="sub-agent is-idle is-new" style="--d:3.15s"></span>
+                    <span class="sub-agent is-distract is-new" style="--d:3.25s"></span>
+                  </div>
+                  <div class="orch-verdict orch-verdict--bad" style="--d:4.50s">task ✗</div>
+                </div>
               </div>
-              <div class="placeholder-row">
-                <span class="placeholder-bar w-30"></span>
-                <span class="placeholder-bar w-60"></span>
-              </div>
-              <div class="placeholder-row">
-                <span class="placeholder-bar w-45"></span>
+
+              <div class="tools-anim-legend">
+                <span class="tools-anim-leg"><i class="dot dot--orch"></i> orchestrator (lead agent)</span>
+                <span class="tools-anim-leg"><i class="dot dot--deleg"></i> delegate (spawn)</span>
+                <span class="tools-anim-leg"><i class="dot dot--subok"></i> sub-agent · ran ✓</span>
+                <span class="tools-anim-leg"><i class="dot dot--subidle"></i> idle specialist (in roster)</span>
+                <span class="tools-anim-leg"><i class="dot dot--new"></i> new sub-agent (this version)</span>
+                <span class="tools-anim-leg"><i class="dot dot--subdist"></i> distractor (carried)</span>
+                <span class="tools-anim-leg"><i class="dot dot--subbad"></i> misrouted sub-agent ✗</span>
+                <span class="tools-anim-leg"><i class="dot dot--memok"></i> task verified ✓</span>
+                <span class="tools-anim-leg"><i class="dot dot--memfail"></i> task failed ✗</span>
               </div>
             </div>
-            <span class="landing-card-cta landing-card-cta--muted">Coming soon</span>
-          </div>
+
+            <span class="landing-card-cta">Open agents evaluation &amp; observability →</span>
+          </button>
+        </div>
+        </section><!-- /P3 -->
+
+        </div><!-- /lp-pages -->
+
+        <div class="lp-controls">
+          <button class="lp-prev" type="button" disabled>&larr; Back</button>
+          <span class="lp-dots" aria-hidden="true">
+            <i class="is-active" data-lp="1"></i>
+            <i data-lp="2"></i>
+            <i data-lp="3"></i>
+          </span>
+          <button class="lp-next" type="button">Next &rarr;</button>
         </div>
       </section>
 
@@ -880,6 +1082,166 @@
         </div>
       </section>
 
+      <!-- ============ SKILL RESULTS ============ -->
+      <section id="skill-results" class="view">
+        <div class="toolbar wrap rs-modebar">
+          <div class="view-tabs" id="skrs-modes">
+            <button class="view-tab active" data-skrs-mode="summary">Summary</button>
+            <button class="view-tab" data-skrs-mode="browser">Browser</button>
+          </div>
+          <div class="rs-browser-tools skrs-browser-tools" style="display:none">
+            <button id="skrs-up" title="Up one level">↑</button>
+            <span id="skrs-breadcrumb" class="breadcrumb"></span>
+            <a id="skrs-dl-folder" class="rs-dl-folder" title="Download this folder as .zip" download href="#">↓ Download folder (.zip)</a>
+          </div>
+        </div>
+
+        <div id="skrs-summary" class="rs-summary">
+          <div class="empty">Loading skill-evolution summary…</div>
+        </div>
+
+        <div id="skrs-browser" class="split" style="display:none">
+          <aside class="left-panel">
+            <div class="left-section">
+              <h4>Directories</h4>
+              <ul id="skrs-dirs" class="tree-list"></ul>
+            </div>
+            <div class="left-section">
+              <h4>Files</h4>
+              <ul id="skrs-files" class="tree-list"></ul>
+            </div>
+          </aside>
+
+          <section class="right-panel" id="skrs-detail">
+            <div class="empty">Pick a run (mode) → domain → version → run → trial, or open a file.</div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============ SKILL DATASETS (Skills / Benchmark) ============ -->
+      <!-- The SKILLS-axis analogue of the Tools "Benchmark" (#datasets) view:
+           same 4 sub-tabs (How it's built / Evolution / Real-world fit / Task
+           Browser), reusing the ds-*/evo-*/rw-* styles. Reached from the
+           landing "Dataset building" stepper (Skills track) and routable at
+           /skills/benchmark. Rendered by the SKDS module in app.js. -->
+      <section id="skill-datasets" class="view">
+        <div class="toolbar wrap ds-modebar">
+          <div class="view-tabs" id="skds-modes">
+            <button class="view-tab active" data-skds-mode="construct">How it's built</button>
+            <button class="view-tab" data-skds-mode="evolution">Evolution</button>
+            <button class="view-tab" data-skds-mode="realworld">Real-world fit</button>
+            <button class="view-tab" data-skds-mode="browser">Task Browser</button>
+          </div>
+          <label>Domain</label>
+          <select id="skds-domain"></select>
+          <span class="skds-note">latent oracle skill library · <code>static</code> track</span>
+          <div class="ds-browser-tools skds-browser-tools" style="display:none">
+            <label>Version</label>
+            <select id="skds-version"><option value="">all</option></select>
+            <label>Split</label>
+            <select id="skds-split">
+              <option value="all">all</option>
+              <option value="train">train (adapt)</option>
+              <option value="test">test</option>
+            </select>
+            <input id="skds-filter" placeholder="filter by task id…" />
+          </div>
+        </div>
+
+        <div id="skds-construct" class="ds-construct">
+          <div class="empty">Loading construction view…</div>
+        </div>
+
+        <div id="skds-evolution" class="ds-evolution" style="display:none">
+          <div class="empty">Loading evolution view…</div>
+        </div>
+
+        <div id="skds-realworld" class="ds-realworld" style="display:none">
+          <div class="empty">Loading real-world comparison…</div>
+        </div>
+
+        <div id="skds-browser" class="split" style="display:none">
+          <aside class="left-panel">
+            <div id="skds-stages" class="stages-summary"></div>
+            <div class="task-list-header">
+              <strong id="skds-task-count">0 tasks</strong>
+            </div>
+            <ul id="skds-task-list" class="task-list"></ul>
+          </aside>
+          <section class="right-panel" id="skds-detail">
+            <div class="empty">Select a task on the left to inspect.</div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============ AGENT DATASETS (Agents / Benchmark) ============ -->
+      <!-- The AGENTS-axis analogue of the Tools/Skills "Benchmark" views: same
+           4 sub-tabs (How it's built / Evolution / Real-world fit / Task
+           Browser), reusing the ds-*/evo-*/rw-* styles. Reached from the
+           landing "Dataset building" stepper (Agents track) and routable at
+           /agents/benchmark. Rendered by the AGDS module in app.js. -->
+      <section id="agent-datasets" class="view">
+        <div class="toolbar wrap ds-modebar">
+          <div class="view-tabs" id="agds-modes">
+            <button class="view-tab active" data-agds-mode="construct">How it's built</button>
+            <button class="view-tab" data-agds-mode="evolution">Evolution</button>
+            <button class="view-tab" data-agds-mode="realworld">Real-world fit</button>
+            <button class="view-tab" data-agds-mode="scoping">Tool scoping</button>
+            <button class="view-tab" data-agds-mode="coverage">Coverage</button>
+            <button class="view-tab" data-agds-mode="browser">Task Browser</button>
+          </div>
+          <label>Domain</label>
+          <select id="agds-domain"></select>
+          <span class="skds-note">given, accumulating agent pool · <code>#agents = #skills</code></span>
+          <div class="ds-browser-tools agds-browser-tools" style="display:none">
+            <label>Version</label>
+            <select id="agds-version"><option value="">all</option></select>
+            <label>Split</label>
+            <select id="agds-split">
+              <option value="all">all</option>
+              <option value="train">train (adapt)</option>
+              <option value="test">test</option>
+            </select>
+            <input id="agds-filter" placeholder="filter by task id…" />
+          </div>
+        </div>
+
+        <div id="agds-construct" class="ds-construct">
+          <div class="empty">Loading construction view…</div>
+        </div>
+
+        <div id="agds-evolution" class="ds-evolution" style="display:none">
+          <div class="empty">Loading evolution view…</div>
+        </div>
+
+        <div id="agds-realworld" class="ds-realworld" style="display:none">
+          <div class="empty">Loading real-world comparison…</div>
+        </div>
+
+        <!-- Build-inspector views, relocated from the old Agents nav. Both are
+             rendered by the BI module (renderInto) using the agds-domain. -->
+        <div id="agds-scoping" class="bi-body" style="display:none">
+          <div class="empty">Loading tool-scoping view…</div>
+        </div>
+
+        <div id="agds-coverage" class="bi-body" style="display:none">
+          <div class="empty">Loading coverage view…</div>
+        </div>
+
+        <div id="agds-browser" class="split" style="display:none">
+          <aside class="left-panel">
+            <div id="agds-stages" class="stages-summary"></div>
+            <div class="task-list-header">
+              <strong id="agds-task-count">0 tasks</strong>
+            </div>
+            <ul id="agds-task-list" class="task-list"></ul>
+          </aside>
+          <section class="right-panel" id="agds-detail">
+            <div class="empty">Select a task on the left to inspect.</div>
+          </section>
+        </div>
+      </section>
+
       <!-- ============ INSIGHTS ============ -->
       <section id="insights" class="view">
         <div class="toolbar wrap">
@@ -896,7 +1258,57 @@
         </div>
         <section id="ins-detail" class="full-panel"></section>
       </section>
+
+      <!-- ============ AGENT RESULTS (Agents / Results) ============ -->
+      <!-- The agents-axis evaluation view: aggregate Summary figures + a lazy
+           file Browser over evovle_agents/jobs (oracle_agents / cumulative_agents
+           → domain → version → run_N → trials). Mirrors the Skills Results view;
+           rendered by the agent-results functions in app.js. The build-inspector
+           (how agents are made) now lives under Agents / Benchmark. -->
+      <section id="agents-results" class="view">
+        <div class="toolbar wrap rs-modebar">
+          <div class="view-tabs" id="ar-modes">
+            <button class="view-tab active" data-ar-mode="summary">Summary</button>
+            <button class="view-tab" data-ar-mode="browser">Browser</button>
+          </div>
+          <div class="rs-browser-tools ar-browser-tools" style="display:none">
+            <button id="ar-up" title="Up one level">↑</button>
+            <span id="ar-breadcrumb" class="breadcrumb"></span>
+            <a id="ar-dl-folder" class="rs-dl-folder" title="Download this folder as .zip" download href="#">↓ Download folder (.zip)</a>
+          </div>
+        </div>
+
+        <div id="ar-summary" class="rs-summary">
+          <div class="empty">Loading agent-evolution summary…</div>
+        </div>
+
+        <div id="ar-browser" class="split" style="display:none">
+          <aside class="left-panel">
+            <div class="left-section">
+              <h4>Directories</h4>
+              <ul id="ar-dirs" class="tree-list"></ul>
+            </div>
+            <div class="left-section">
+              <h4>Files</h4>
+              <ul id="ar-files" class="tree-list"></ul>
+            </div>
+          </aside>
+
+          <section class="right-panel" id="ar-detail">
+            <div class="empty">Pick a setting (mode) → domain → version → run → trial, or open a file.</div>
+          </section>
+        </div>
+      </section>
     </main>
+
+    <!-- Build-inspector slide-over detail drawer (skill / agent / task) -->
+    <div id="bi-drawer" class="bi-drawer hidden">
+      <div class="bi-drawer-backdrop" data-bi-close></div>
+      <div class="bi-drawer-panel">
+        <button class="bi-drawer-close" data-bi-close>×</button>
+        <div id="bi-drawer-body"></div>
+      </div>
+    </div>
 
     <div id="toast" class="toast"></div>
     <script src="/static/app.js"></script>

@@ -35,6 +35,51 @@ MODES_DEFAULT = ("oracle", "no_memory", "adapt_fwd")
 
 
 # ---------------------------------------------------------------------------
+# Mode-ID canonicalization.
+#
+# The dataset/eval pipeline emits explicit 2×2 mode IDs on disk
+# (``{oracle,cumulative}_tool_{memory,no_memory}``), but the rest of this
+# module and the whole frontend speak an older canonical taxonomy
+# (``oracle / no_memory / adapt_oracle / adapt_fwd``). The two are the *same*
+# 2×2 design, just renamed. To keep all downstream logic + the UI working we
+# translate disk IDs → canonical IDs at every point where mode names enter the
+# system (TSV columns, per-cell/per-task frames, filename-derived modes).
+# ---------------------------------------------------------------------------
+_DISK_TO_CANON_MODE = {
+    "cumulative_tool_no_memory": "no_memory",
+    "oracle_tool_no_memory": "oracle",
+    "cumulative_tool_memory": "adapt_fwd",
+    "oracle_tool_memory": "adapt_oracle",
+}
+# Reverse map (canonical → on-disk), used to resolve report.json sub-directories.
+_CANON_TO_DISK_MODE = {v: k for k, v in _DISK_TO_CANON_MODE.items()}
+
+
+def _canon_mode(m: Any) -> Any:
+    """Disk mode ID → canonical mode ID (pass through anything unknown)."""
+    return _DISK_TO_CANON_MODE.get(m, m) if isinstance(m, str) else m
+
+
+def _canon_pair(s: Any) -> Any:
+    """Canonicalize a ``"A − B"`` pair string token-by-token."""
+    if not isinstance(s, str) or " − " not in s:
+        return s
+    return " − ".join(_canon_mode(part.strip()) for part in s.split(" − "))
+
+
+def _canon_df_modes(df: "pd.DataFrame | None") -> "pd.DataFrame | None":
+    """Canonicalize any mode-bearing columns of ``df`` in place."""
+    if df is None:
+        return df
+    for col in ("mode", "system", "A", "B"):
+        if col in df.columns:
+            df[col] = df[col].map(_canon_mode)
+    if "pair" in df.columns:
+        df["pair"] = df["pair"].map(_canon_pair)
+    return df
+
+
+# ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
 def _ba_dir(run_root: Path) -> Path:
@@ -55,7 +100,7 @@ def available_modes(run_root: Path) -> list[str]:
     ba = _ba_dir(run_root)
     modes = []
     for f in ba.glob("*__per_cell.tsv"):
-        modes.append(f.name.split("__")[0])
+        modes.append(_canon_mode(f.name.split("__")[0]))
     return sorted(set(modes))
 
 
@@ -82,7 +127,7 @@ def load_per_cell(run_root_str: str) -> pd.DataFrame:
         frames.append(df)
     if not frames:
         raise FileNotFoundError("No *__per_cell.tsv files found.")
-    return pd.concat(frames, ignore_index=True)
+    return _canon_df_modes(pd.concat(frames, ignore_index=True))
 
 
 @lru_cache(maxsize=64)
@@ -97,7 +142,7 @@ def load_per_task(run_root_str: str) -> pd.DataFrame:
         frames.append(df)
     if not frames:
         raise FileNotFoundError("No *__per_task.tsv files found.")
-    return pd.concat(frames, ignore_index=True)
+    return _canon_df_modes(pd.concat(frames, ignore_index=True))
 
 
 @lru_cache(maxsize=64)
@@ -105,7 +150,7 @@ def load_cross_mode(run_root_str: str) -> pd.DataFrame | None:
     run_root = Path(run_root_str)
     ba = _ba_dir(run_root)
     p = ba / "cross_mode_summary.tsv"
-    return _read_tsv(p) if p.exists() else None
+    return _canon_df_modes(_read_tsv(p)) if p.exists() else None
 
 
 # ---------------------------------------------------------------------------
@@ -598,23 +643,24 @@ _CL_SETUPS_DEFAULT: list[dict] = [
         "key": "oracle",
         "label": "Oracle Tool",
         "is_baseline": True,
-        "subdir": None,
+        "subdirs": (),
         "external_run_candidates": ("oracle_evolving_gpt5", "oracle_evolving", "oracle"),
     },
     {
         "key": "no_memory",
         "label": "Cumulative Tool (No Memory)",
-        "subdir": "no_memory",
+        # New on-disk ID first, old canonical ID kept as a fallback for legacy runs.
+        "subdirs": ("cumulative_tool_no_memory", "no_memory"),
     },
     {
         "key": "adapt_fwd",
         "label": "Cumulative Tool + Raw Memory",
-        "subdir": "adapt_fwd",
+        "subdirs": ("cumulative_tool_memory", "adapt_fwd"),
     },
     {
         "key": "adapt_oracle",
         "label": "Oracle Tool + Raw Memory",
-        "subdir": "adapt_oracle",
+        "subdirs": ("oracle_tool_memory", "adapt_oracle"),
     },
 ]
 
@@ -626,9 +672,13 @@ def _resolve_setup_path(
     setup: dict,
     oracle_run: str | None = None,
 ) -> Path | None:
-    if setup.get("subdir"):
-        p = results_root / run / domain / setup["subdir"] / "report.json"
-        return p if p.exists() else None
+    subdirs = setup.get("subdirs") or ()
+    if subdirs:
+        for sd in subdirs:
+            p = results_root / run / domain / sd / "report.json"
+            if p.exists():
+                return p
+        return None
     # Oracle-style: prefer an external run (oracle_evolving_*).
     if oracle_run:
         p = results_root / oracle_run / domain / "report.json"
@@ -721,9 +771,11 @@ def cl_summary(
                 continue
             has_report = False
             for s in _CL_SETUPS_DEFAULT:
-                sd = s.get("subdir")
-                if sd and (c / sd / "report.json").exists():
-                    has_report = True
+                for sd in (s.get("subdirs") or ()):
+                    if (c / sd / "report.json").exists():
+                        has_report = True
+                        break
+                if has_report:
                     break
             if has_report or (c / "report.json").exists():
                 candidate_domains.append(c.name)
@@ -837,7 +889,7 @@ def forgetting_summary(run_root: Path) -> dict[str, Any]:
     if not p.exists():
         # Fallback: derive from per_cell.
         return _derive_forgetting(run_root)
-    df = _read_tsv(p)
+    df = _canon_df_modes(_read_tsv(p))
     modes = df["mode"].drop_duplicates().tolist()
     domains = [d for d in df["domain"].drop_duplicates().tolist() if d != "OVERALL"]
     overall = _df_to_records(df[df["domain"] == "OVERALL"])
@@ -867,7 +919,7 @@ def memory_summary(run_root: Path) -> dict[str, Any]:
     p = acc / "memory_summary.tsv"
     if not p.exists():
         raise FileNotFoundError(f"memory_summary.tsv missing under {acc}")
-    df = _read_tsv(p)
+    df = _canon_df_modes(_read_tsv(p))
     if df.empty:
         return {"systems": [], "domains": [], "panel_a": [], "panel_b": [], "panel_c": [], "overall": {}}
 
@@ -1085,7 +1137,7 @@ def pair_deltas(run_root: Path) -> dict[str, Any]:
     p = _accuracy_dir(run_root) / "pair_deltas_success.tsv"
     if not p.exists():
         raise FileNotFoundError(f"pair_deltas_success.tsv missing under {run_root}")
-    df = _read_tsv(p)
+    df = _canon_df_modes(_read_tsv(p))
     pair_labels = {
         "oracle − no_memory": "Tool selection benefit",
         "adapt_oracle − oracle": "Tool usage benefit",
@@ -1145,9 +1197,13 @@ def token_cost(run_root: Path) -> dict[str, Any]:
         if rec:
             extra[mode] = rec
 
+    # Canonicalize disk mode IDs → canonical IDs for the response. The per-task
+    # filenames above had to use the on-disk IDs, so we translate only now.
+    df = _canon_df_modes(df)
+    extra = {_canon_mode(k): v for k, v in extra.items()}
     return {
         "source_tsv": str(p),
-        "modes": modes,
+        "modes": [_canon_mode(m) for m in modes],
         "views": ["fwd", "bwt_all", "bwt_final"],
         "domains": [d for d in df["domain"].drop_duplicates().tolist() if d != "OVERALL"],
         "rows": _df_to_records(df),

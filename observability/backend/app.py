@@ -37,7 +37,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from . import insights
+from . import build_engine, insights
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +69,28 @@ RESULTS_DIR = Path(
     os.environ.get(
         "EVOLVE_RESULTS_DIR",
         EVOLVE_TOOLS_ROOT / "results",
+    )
+)
+
+# Evolving-skills results live under <MAS_ROOT>/evovle_skills/jobs (runs =
+# skill-setting modes: no_skill_oracle_tool / oracle_skill_oracle_tool /
+# evolved_oracle_tools / ...; each → domain → version → run_N → trials).
+EVOLVE_SKILLS_ROOT = MAS_ROOT / "evovle_skills"
+SKILL_RESULTS_DIR = Path(
+    os.environ.get(
+        "EVOLVE_SKILL_RESULTS_DIR",
+        EVOLVE_SKILLS_ROOT / "jobs",
+    )
+)
+
+# Evolving-agents results live under <MAS_ROOT>/evovle_agents/jobs (runs =
+# agent-setting modes: oracle_agents / cumulative_agents; each → domain →
+# version → run_N → trials), plus an _analysis dir of aggregate figures.
+EVOLVE_AGENTS_ROOT = MAS_ROOT / "evovle_agents"
+AGENT_RESULTS_DIR = Path(
+    os.environ.get(
+        "EVOLVE_AGENT_RESULTS_DIR",
+        EVOLVE_AGENTS_ROOT / "jobs",
     )
 )
 
@@ -160,7 +182,7 @@ def extract_task_id(filename: str) -> str | None:
 # ---------------------------------------------------------------------------
 # App + middleware
 # ---------------------------------------------------------------------------
-app = FastAPI(title="MAS-Evolve Bench Observability", version="0.1.0")
+app = FastAPI(title="EvoHarnessBench — evaluation & observability", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -189,6 +211,11 @@ def api_config():
             "exists": RESULTS_DIR.exists(),
             "runs": _list_subdirs(RESULTS_DIR),
         },
+        "skill_results": {
+            "path": str(SKILL_RESULTS_DIR),
+            "exists": SKILL_RESULTS_DIR.exists(),
+            "runs": [r for r in _list_subdirs(SKILL_RESULTS_DIR) if not r.startswith("_")],
+        },
         "mas_root": str(MAS_ROOT),
         "evolve_tools_root": str(EVOLVE_TOOLS_ROOT),
         # Back-compat alias for older clients that read ``enterprise_root``.
@@ -208,6 +235,268 @@ def _dataset_root(benchmark: str) -> Path:
     return root
 
 
+# ---------------------------------------------------------------------------
+# Breadth-only tool domains sourced from ``data/evovling_tools``
+# ---------------------------------------------------------------------------
+# A few tool benchmarks (e.g. ``enterprise_tri_hybrid``) ship only as bare
+# ``{train,test}.jsonl`` task rows under ``data/evovling_tools/<domain>/v_k/``
+# — the same on-disk shape used by the evolving-skills / evolving-agents
+# datasets — rather than the richer ``env_summary.json`` + ``benchmark/configs``
+# layout under ``evolve_tools/``. Their tool universe accumulates across
+# versions (C_1 ⊆ C_2 ⊆ ...), so they are *breadth*-style and surfaced ONLY
+# under the breadth benchmark (never depth). We synthesize the same response
+# shapes the breadth UI already consumes directly from the task rows.
+EVOLVING_TOOLS_ROOT = MAS_ROOT / "data" / "evovling_tools"
+_ET_VER_RE = re.compile(r"^v(\d+)$")
+_ET_FN_RE = re.compile(r"^v(\d+)__(train|test)__(.+)\.json$")
+
+
+def _et_versions(domain: str) -> list[int]:
+    d = EVOLVING_TOOLS_ROOT / domain
+    if not d.is_dir():
+        return []
+    out: list[int] = []
+    for p in d.iterdir():
+        m = _ET_VER_RE.match(p.name)
+        if m and p.is_dir():
+            out.append(int(m.group(1)))
+    return sorted(out)
+
+
+@lru_cache(maxsize=512)
+def _et_rows(domain: str, version: int, split: str) -> tuple[dict, ...]:
+    fp = EVOLVING_TOOLS_ROOT / domain / f"v{version}" / f"{split}.jsonl"
+    rows: list[dict] = []
+    if fp.exists():
+        for line in fp.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return tuple(rows)
+
+
+def _evolving_only_breath_domains() -> list[str]:
+    """Domains under ``data/evovling_tools`` that are *not* already first-class
+    breadth domains — surfaced as extra breadth-benchmark domains."""
+    if not EVOLVING_TOOLS_ROOT.is_dir():
+        return []
+    breath_root = DATASET_DIRS["breath"]
+    out: list[str] = []
+    for p in sorted(EVOLVING_TOOLS_ROOT.iterdir()):
+        if not p.is_dir() or (breath_root / p.name).exists():
+            continue
+        if _et_versions(p.name):
+            out.append(p.name)
+    return out
+
+
+def _is_evolving_only_domain(benchmark: str, domain: str) -> bool:
+    return benchmark == "breath" and domain in set(_evolving_only_breath_domains())
+
+
+def _et_stages(domain: str) -> list[dict]:
+    """Per-version records from the task rows. ``cummulative_tools`` is the tool
+    universe available at V_k; new tools are C_k − C_(k−1). Complexity stats are
+    derived from per-row ``oracle_tools`` / ``verifiers`` lengths."""
+    stages: list[dict] = []
+    prev_cum: set[str] = set()
+    for v in _et_versions(domain):
+        train = _et_rows(domain, v, "train")
+        test = _et_rows(domain, v, "test")
+        cum: set[str] = set()
+        tool_counts: dict[str, int] = {}
+        tools_per_task: list[int] = []
+        verif_per_task: list[int] = []
+        for r in (*train, *test):
+            cum |= set(r.get("cummulative_tools") or [])
+            ot = r.get("oracle_tools") or []
+            if isinstance(ot, list):
+                tools_per_task.append(len(ot))
+                for t in ot:
+                    if isinstance(t, str):
+                        tool_counts[t] = tool_counts.get(t, 0) + 1
+            vf = r.get("verifiers") or []
+            if isinstance(vf, list):
+                verif_per_task.append(len(vf))
+        stages.append(
+            {
+                "version": v,
+                "name": f"V{v}",
+                "cumulative": cum,
+                "new": sorted(cum - prev_cum),
+                "n_train": len(train),
+                "n_test": len(test),
+                "tools_per_task": tools_per_task,
+                "verifiers_per_task": verif_per_task,
+                "tool_counts": tool_counts,
+            }
+        )
+        prev_cum = cum
+    return stages
+
+
+def _et_stat(xs: list[int]) -> dict:
+    if not xs:
+        return {"n": 0, "mean": None, "min": None, "max": None, "p50": None}
+    xs2 = sorted(xs)
+    n = len(xs2)
+    mid = xs2[n // 2] if n % 2 else (xs2[n // 2 - 1] + xs2[n // 2]) / 2
+    return {"n": n, "mean": sum(xs2) / n, "min": xs2[0], "max": xs2[-1], "p50": mid}
+
+
+def _et_summary(benchmark: str, domain: str) -> dict:
+    stages = _et_stages(domain)
+    env_stages = [
+        {
+            "name": s["name"],
+            "cumulative_tools": sorted(s["cumulative"]),
+            "new_tools": s["new"],
+            "num_adapt": s["n_train"],
+            "num_test": s["n_test"],
+        }
+        for s in stages
+    ]
+    total = sum(s["n_train"] + s["n_test"] for s in stages)
+    return {
+        "benchmark": benchmark,
+        "domain": domain,
+        "env_summary": {
+            "total_tasks": total,
+            "num_stages": len(stages),
+            "staging": "breadth",
+            "stages": env_stages,
+        },
+        "has_manifest": False,
+        "has_constraints_report": False,
+        "has_schedule_rebalance_report": False,
+        "configs_count": total,
+        "configs_at_assigned_stage_count": 0,
+        "figures": [],
+        "source": "evovling_tools",
+    }
+
+
+def _et_evolution(benchmark: str, domain: str) -> dict:
+    stages = _et_stages(domain)
+    cumulatives = [s["cumulative"] for s in stages]
+    all_tools: set[str] = set()
+    for cs in cumulatives:
+        all_tools |= cs
+
+    prev_cum: set[str] = set()
+    stages_out: list[dict] = []
+    for s in stages:
+        cum = s["cumulative"]
+        new = s["new"]
+        retired = sorted(prev_cum - cum)
+        stages_out.append(
+            {
+                "name": s["name"],
+                "description": None,
+                "new_tools": list(new),
+                "retired_tools": retired,
+                "cumulative_tools": sorted(cum),
+                "num_cumulative_tools": len(cum),
+                "num_new_tools": len(new),
+                "num_retired_tools": len(retired),
+                "num_new_tasks": s["n_train"] + s["n_test"],
+                "num_adapt": s["n_train"],
+                "num_test": s["n_test"],
+                "tools_per_task": _et_stat(s["tools_per_task"]),
+                "verifiers_per_task": _et_stat(s["verifiers_per_task"]),
+                "top_tool_usage": sorted(
+                    [{"tool": t, "count": c} for t, c in s["tool_counts"].items()],
+                    key=lambda x: (-x["count"], x["tool"]),
+                )[:15],
+            }
+        )
+        prev_cum = cum
+
+    intro: dict[str, int] = {}
+    for i, cs in enumerate(cumulatives):
+        for t in cs:
+            intro.setdefault(t, i)
+    timeline: list[dict] = []
+    for t in sorted(all_tools, key=lambda x: (intro.get(x, 99), x)):
+        presence: list[str] = []
+        for i, cs in enumerate(cumulatives):
+            if t not in cs:
+                presence.append("absent")
+            elif intro.get(t) == i:
+                presence.append("new")
+            else:
+                presence.append("present")
+        timeline.append({"tool": t, "intro_stage": intro[t], "presence": presence})
+
+    return {
+        "benchmark": benchmark,
+        "domain": domain,
+        "num_stages": len(stages),
+        "total_tasks": sum(s["n_train"] + s["n_test"] for s in stages),
+        "staging": "breadth",
+        "adapt_ratio": None,
+        "seed": None,
+        "stages": stages_out,
+        "tool_timeline": timeline,
+    }
+
+
+def _et_task_index(domain: str) -> list[dict]:
+    items: list[dict] = []
+    for v in _et_versions(domain):
+        for split in ("train", "test"):
+            for r in _et_rows(domain, v, split):
+                tid = r.get("task_id") or ""
+                items.append(
+                    {
+                        "filename": f"v{v}__{split}__{tid}.json",
+                        "task_id": tid,
+                        "stage": v - 1,
+                        "split": split,
+                    }
+                )
+    return items
+
+
+def _et_tasks(domain: str, stage: int | None) -> dict:
+    items = _et_task_index(domain)
+    if stage is not None:
+        items = [it for it in items if it["stage"] == stage]
+    return {"kind": "oracle", "count": len(items), "tasks": items}
+
+
+def _et_task_detail(domain: str, filename: str) -> dict:
+    m = _ET_FN_RE.match(filename)
+    if not m:
+        raise HTTPException(status_code=404, detail=f"Task file missing: {filename}")
+    v, split, tid = int(m.group(1)), m.group(2), m.group(3)
+    for r in _et_rows(domain, v, split):
+        if (r.get("task_id") or "") == tid:
+            oracle = r.get("oracle_tools") or []
+            return {
+                "task_id": tid,
+                "version": f"v{v}",
+                "split": split,
+                "user_prompt": r.get("user_prompt"),
+                "system_prompt": r.get("system_prompt"),
+                "mcp_endpoint": r.get("mcp_endpoint"),
+                # Oracle (gold) tools needed by the task. The full cumulative
+                # universe the agent is presented with is in ``cumulative_tools``
+                # (also visible in the raw JSON) — we deliberately do not flag
+                # the distractors as "restricted" to avoid a misleading red flood.
+                "selected_tools": oracle,
+                "restricted_tools": [],
+                "cumulative_tools": r.get("cummulative_tools") or [],
+                "verifiers": r.get("verifiers") or [],
+                "gym_servers_config": r.get("gym_servers_config"),
+            }
+    raise HTTPException(status_code=404, detail=f"Task file missing: {filename}")
+
+
 @app.get("/api/datasets/{benchmark}")
 def api_dataset_overview(benchmark: str):
     root = _dataset_root(benchmark)
@@ -220,6 +509,12 @@ def api_dataset_overview(benchmark: str):
             domains.append(d)
         else:
             other.append(d)
+    # Breadth also surfaces jsonl-only "breadth-style" tool domains (e.g.
+    # enterprise_tri_hybrid) sourced from data/evovling_tools. Depth never does.
+    if benchmark == "breath":
+        for d in _evolving_only_breath_domains():
+            if d not in domains:
+                domains.append(d)
     overview_path = root / "all_domains_overview.json"
     overview: Any = None
     if overview_path.exists():
@@ -235,6 +530,8 @@ def api_dataset_overview(benchmark: str):
 
 @app.get("/api/datasets/{benchmark}/{domain}/summary")
 def api_dataset_summary(benchmark: str, domain: str):
+    if _is_evolving_only_domain(benchmark, domain):
+        return _et_summary(benchmark, domain)
     root = _dataset_root(benchmark) / domain
     if not root.exists():
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' missing")
@@ -272,6 +569,8 @@ def api_dataset_evolution(benchmark: str, domain: str):
         - task complexity (avg/min/max selected_tools and verifiers per task)
         - a tool timeline matrix (rows=tools, cols=stages) marking intro/present
     """
+    if _is_evolving_only_domain(benchmark, domain):
+        return _et_evolution(benchmark, domain)
     root = _dataset_root(benchmark) / domain
     if not root.exists():
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' missing")
@@ -546,6 +845,8 @@ def api_dataset_tasks(
     ``kind=stage`` returns ``configs_at_assigned_stage/`` (one per task per stage assignment).
     Optional ``stage`` filters stage-prefixed filenames.
     """
+    if _is_evolving_only_domain(benchmark, domain):
+        return _et_tasks(domain, stage)
     root = _dataset_root(benchmark) / domain / "benchmark"
     sub = "configs" if kind == "oracle" else "configs_at_assigned_stage"
     files = _list_files(root / sub, ".json")
@@ -582,6 +883,8 @@ def api_dataset_tasks(
 def api_dataset_task(benchmark: str, domain: str, kind: str, filename: str):
     if kind not in ("oracle", "stage"):
         raise HTTPException(status_code=400, detail="kind must be oracle or stage")
+    if _is_evolving_only_domain(benchmark, domain):
+        return _et_task_detail(domain, filename)
     sub = "configs" if kind == "oracle" else "configs_at_assigned_stage"
     base = _dataset_root(benchmark) / domain / "benchmark" / sub
     target = _safe_relpath(base, Path(filename))
@@ -720,6 +1023,204 @@ def api_results_download_zip(path: str = ""):
         filename=f"{arc_base}.zip",
         background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Generic file-browser helpers (shared by /api/skill_results/*).
+# These intentionally use ``iterdir`` (one level, never recursive) so listing
+# stays fast even over very large trial trees; only ``_browse_zip`` walks.
+# ---------------------------------------------------------------------------
+def _browse_tree(base: Path, path: str) -> dict:
+    rel = _split_path(path)
+    target = _safe_relpath(base, rel)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Path missing: {path}")
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+    dirs, files = [], []
+    for c in sorted(target.iterdir()):
+        if c.is_dir():
+            dirs.append(c.name)
+        else:
+            try:
+                files.append({"name": c.name, "size": c.stat().st_size})
+            except OSError:
+                files.append({"name": c.name, "size": -1})
+    return {"path": str(rel) if str(rel) != "." else "", "dirs": dirs, "files": files}
+
+
+def _browse_file(base: Path, path: str) -> JSONResponse:
+    rel = _split_path(path)
+    target = _safe_relpath(base, rel)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"File missing: {path}")
+    if target.is_dir():
+        raise HTTPException(status_code=400, detail="Path is a directory")
+    if target.suffix.lower() == ".json":
+        return JSONResponse({"kind": "json", "path": path, "data": _read_json(target)})
+    return JSONResponse(
+        {"kind": "text", "path": path, "data": _read_text(target), "size": target.stat().st_size}
+    )
+
+
+def _browse_raw(base: Path, path: str, download: bool) -> FileResponse:
+    rel = _split_path(path)
+    target = _safe_relpath(base, rel)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File missing")
+    if download:
+        return FileResponse(target, filename=target.name)
+    return FileResponse(target)
+
+
+def _browse_zip(base: Path, path: str) -> FileResponse:
+    rel = _split_path(path)
+    target = _safe_relpath(base, rel)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Path missing: {path}")
+    arc_base = target.name or "download"
+    tmp = tempfile.NamedTemporaryFile(prefix="evolve_dl_", suffix=".zip", delete=False)
+    tmp_path = Path(tmp.name)
+    tmp.close()
+    try:
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            if target.is_file():
+                zf.write(target, arcname=target.name)
+            else:
+                files = [f for f in target.rglob("*") if f.is_file()]
+                for f in sorted(files):
+                    zf.write(f, arcname=str(Path(arc_base) / f.relative_to(target)))
+                if not files:
+                    zf.writestr(f"{arc_base}/", "")
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return FileResponse(
+        tmp_path,
+        media_type="application/zip",
+        filename=f"{arc_base}.zip",
+        background=BackgroundTask(lambda: tmp_path.unlink(missing_ok=True)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Skill-evolution results (evovle_skills/jobs) — browser + summary figures.
+# ---------------------------------------------------------------------------
+@app.get("/api/skill_results/tree")
+def api_skill_results_tree(path: str = ""):
+    """Directory listing under ``SKILL_RESULTS_DIR`` (one level)."""
+    return _browse_tree(SKILL_RESULTS_DIR, path)
+
+
+@app.get("/api/skill_results/file")
+def api_skill_results_file(path: str):
+    """File contents under ``SKILL_RESULTS_DIR`` (JSON parsed, else text)."""
+    return _browse_file(SKILL_RESULTS_DIR, path)
+
+
+@app.get("/api/skill_results/raw")
+def api_skill_results_raw(path: str, download: bool = False):
+    """Raw file (inline image, or attachment when ``download`` is true)."""
+    return _browse_raw(SKILL_RESULTS_DIR, path, download)
+
+
+@app.get("/api/skill_results/download_zip")
+def api_skill_results_download_zip(path: str = ""):
+    """Zip a directory (or file) under ``SKILL_RESULTS_DIR`` and stream it."""
+    return _browse_zip(SKILL_RESULTS_DIR, path)
+
+
+@app.get("/api/skill_results/summary_figures")
+def api_skill_results_summary_figures():
+    """Curated aggregate figures for the skills Results 'Summary' view.
+
+    Scans only the small ``_analysis`` directories (non-recursive) so it never
+    touches the heavy per-trial trees.
+    """
+    groups = []
+    for label, relsub in [
+        ("Continual-learning figures", Path("_analysis") / "figures"),
+        ("Per-cell analysis", Path("_analysis")),
+    ]:
+        d = SKILL_RESULTS_DIR / relsub
+        if not d.is_dir():
+            continue
+        figs = []
+        for c in sorted(d.iterdir()):
+            if c.is_file() and c.suffix.lower() == ".png":
+                try:
+                    size = c.stat().st_size
+                except OSError:
+                    size = -1
+                figs.append({"name": c.name, "path": str(relsub / c.name), "size": size})
+        if figs:
+            groups.append({"label": label, "figures": figs})
+    return {
+        "groups": groups,
+        "exists": SKILL_RESULTS_DIR.exists(),
+        "path": str(SKILL_RESULTS_DIR),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Agent-evolution results (evovle_agents/jobs) — browser + summary figures.
+# Same shape as the skill-results browser, pointed at the agent-setting runs
+# (oracle_agents / cumulative_agents → domain → version → run_N → trials).
+# ---------------------------------------------------------------------------
+@app.get("/api/agent_results/tree")
+def api_agent_results_tree(path: str = ""):
+    """Directory listing under ``AGENT_RESULTS_DIR`` (one level)."""
+    return _browse_tree(AGENT_RESULTS_DIR, path)
+
+
+@app.get("/api/agent_results/file")
+def api_agent_results_file(path: str):
+    """File contents under ``AGENT_RESULTS_DIR`` (JSON parsed, else text)."""
+    return _browse_file(AGENT_RESULTS_DIR, path)
+
+
+@app.get("/api/agent_results/raw")
+def api_agent_results_raw(path: str, download: bool = False):
+    """Raw file (inline image, or attachment when ``download`` is true)."""
+    return _browse_raw(AGENT_RESULTS_DIR, path, download)
+
+
+@app.get("/api/agent_results/download_zip")
+def api_agent_results_download_zip(path: str = ""):
+    """Zip a directory (or file) under ``AGENT_RESULTS_DIR`` and stream it."""
+    return _browse_zip(AGENT_RESULTS_DIR, path)
+
+
+@app.get("/api/agent_results/summary_figures")
+def api_agent_results_summary_figures():
+    """Curated aggregate figures for the agents Results 'Summary' view.
+
+    Scans only the small ``_analysis`` directories (non-recursive) so it never
+    touches the heavy per-trial trees.
+    """
+    groups = []
+    for label, relsub in [
+        ("Continual-learning figures", Path("_analysis") / "figures"),
+        ("Per-cell analysis", Path("_analysis")),
+    ]:
+        d = AGENT_RESULTS_DIR / relsub
+        if not d.is_dir():
+            continue
+        figs = []
+        for c in sorted(d.iterdir()):
+            if c.is_file() and c.suffix.lower() == ".png":
+                try:
+                    size = c.stat().st_size
+                except OSError:
+                    size = -1
+                figs.append({"name": c.name, "path": str(relsub / c.name), "size": size})
+        if figs:
+            groups.append({"label": label, "figures": figs})
+    return {
+        "groups": groups,
+        "exists": AGENT_RESULTS_DIR.exists(),
+        "path": str(AGENT_RESULTS_DIR),
+    }
 
 
 @app.get("/api/results/cl_summary")
@@ -892,6 +1393,201 @@ def api_insights_task_failures(
 
 
 # ---------------------------------------------------------------------------
+# Build inspector (Agents axis) -- how the skill/agent tracks are BUILT.
+#
+# Thin wrapper over ``build_engine``, which calls the real build code in
+# ``evovle_skills`` / ``evovle_agents`` (no values re-implemented).  Surfaces
+# the capability partition (tool universe -> disjoint, complete capability
+# agents), per-agent tool scoping, and the coverage / multi-agent-forcing
+# guarantees.
+# ---------------------------------------------------------------------------
+def _build_guard(domain: str) -> None:
+    if domain not in build_engine.list_domains():
+        raise HTTPException(status_code=404, detail=f"unknown build domain '{domain}'")
+
+
+@app.get("/api/build/domains")
+def api_build_domains():
+    return {"domains": build_engine.list_domains()}
+
+
+@app.get("/api/build/{domain}/overview")
+def api_build_overview(domain: str):
+    _build_guard(domain)
+    return build_engine.overview(domain)
+
+
+@app.get("/api/build/{domain}/skills")
+def api_build_skills(domain: str):
+    _build_guard(domain)
+    return build_engine.skill_library(domain)
+
+
+@app.get("/api/build/{domain}/skills/{slug}")
+def api_build_skill_detail(domain: str, slug: str):
+    _build_guard(domain)
+    return build_engine.skill_detail(domain, slug)
+
+
+@app.get("/api/build/{domain}/agents")
+def api_build_agents(domain: str):
+    _build_guard(domain)
+    return build_engine.agent_library(domain)
+
+
+@app.get("/api/build/{domain}/agents/{slug}")
+def api_build_agent_detail(domain: str, slug: str):
+    _build_guard(domain)
+    return build_engine.agent_detail(domain, slug)
+
+
+@app.get("/api/build/{domain}/scoping")
+def api_build_scoping(domain: str):
+    _build_guard(domain)
+    return build_engine.tool_scoping(domain)
+
+
+@app.get("/api/build/{domain}/coverage")
+def api_build_coverage(domain: str):
+    _build_guard(domain)
+    return build_engine.coverage_and_forcing(domain)
+
+
+@app.get("/api/build/{domain}/task/{task_id}")
+def api_build_task(domain: str, task_id: str):
+    _build_guard(domain)
+    return build_engine.task_detail(domain, task_id)
+
+
+@app.get("/api/build/{domain}/dataset")
+def api_build_dataset(domain: str, version: int = Query(...), split: str = Query("test")):
+    _build_guard(domain)
+    return build_engine.dataset_rows(domain, version, split)
+
+
+# ---------------------------------------------------------------------------
+# Skill DATASET (benchmark) views -- the SKILLS-track analogue of the tools
+# ``/api/datasets/*`` endpoints, powering the four skills/benchmark sub-tabs
+# (How it's built / Evolution / Real-world fit / Task Browser).  Backed by
+# ``build_engine`` (same evovle_skills build code the runner uses).  Literal
+# routes are declared before the ``{domain}`` ones so ``realworld_comparison``
+# is never mistaken for a domain.
+# ---------------------------------------------------------------------------
+@app.get("/api/skill-datasets")
+def api_skill_datasets():
+    return build_engine.skill_dataset_domains()
+
+
+@app.get("/api/skill-datasets/realworld_comparison")
+def api_skill_realworld_comparison():
+    return build_engine.skill_realworld_comparison()
+
+
+@app.get("/api/skill-datasets/realworld_comparison/image")
+def api_skill_realworld_image(name: str = Query(...)):
+    target = build_engine.skill_comparison_image_path(name)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Image missing/invalid: {name}")
+    return FileResponse(target, media_type="image/png")
+
+
+@app.get("/api/skill-datasets/{domain}/summary")
+def api_skill_dataset_summary(domain: str):
+    _build_guard(domain)
+    return build_engine.skill_dataset_summary(domain)
+
+
+@app.get("/api/skill-datasets/{domain}/evolution")
+def api_skill_dataset_evolution(domain: str):
+    _build_guard(domain)
+    return build_engine.skill_dataset_evolution(domain)
+
+
+@app.get("/api/skill-datasets/{domain}/tasks")
+def api_skill_dataset_tasks(
+    domain: str, version: str = Query(""), split: str = Query("all")
+):
+    _build_guard(domain)
+    return build_engine.skill_dataset_tasks(domain, version, split)
+
+
+@app.get("/api/skill-datasets/{domain}/task")
+def api_skill_dataset_task_detail(
+    domain: str,
+    version: str = Query(...),
+    split: str = Query("all"),
+    task_id: str = Query(...),
+):
+    _build_guard(domain)
+    return build_engine.skill_dataset_task_detail(domain, version, split, task_id)
+
+
+@app.get("/api/skill-datasets/{domain}/skill")
+def api_skill_dataset_skill_detail(domain: str, slug: str = Query(...)):
+    _build_guard(domain)
+    return build_engine.skill_dataset_skill_detail(domain, slug)
+
+
+# ---------------------------------------------------------------------------
+# ``/api/agent-datasets/*`` endpoints, powering the four agents/benchmark
+# sub-tabs (How it's built / Evolution / Real-world fit / Task Browser).
+# Backed by ``build_engine`` over the materialized ``data/evovling_agents``
+# tree.  Literal routes precede ``{domain}`` ones so ``realworld_comparison``
+# is never mistaken for a domain.
+# ---------------------------------------------------------------------------
+@app.get("/api/agent-datasets")
+def api_agent_datasets():
+    return build_engine.agent_dataset_domains()
+
+
+@app.get("/api/agent-datasets/realworld_comparison")
+def api_agent_realworld_comparison():
+    return build_engine.agent_realworld_comparison()
+
+
+@app.get("/api/agent-datasets/realworld_comparison/image")
+def api_agent_realworld_image(name: str = Query(...)):
+    target = build_engine.agent_comparison_image_path(name)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Image missing/invalid: {name}")
+    return FileResponse(target, media_type="image/png")
+
+
+@app.get("/api/agent-datasets/{domain}/summary")
+def api_agent_dataset_summary(domain: str):
+    return build_engine.agent_dataset_summary(domain)
+
+
+@app.get("/api/agent-datasets/{domain}/evolution")
+def api_agent_dataset_evolution(domain: str):
+    return build_engine.agent_dataset_evolution(domain)
+
+
+@app.get("/api/agent-datasets/{domain}/tasks")
+def api_agent_dataset_tasks(
+    domain: str, version: str = Query(""), split: str = Query("all")
+):
+    return build_engine.agent_dataset_tasks(domain, version, split)
+
+
+@app.get("/api/agent-datasets/{domain}/task")
+def api_agent_dataset_task_detail(
+    domain: str,
+    version: str = Query(...),
+    split: str = Query("all"),
+    task_id: str = Query(...),
+):
+    return build_engine.agent_dataset_task_detail(domain, version, split, task_id)
+
+
+@app.get("/api/agent-datasets/{domain}/agent")
+def api_agent_dataset_agent_detail(
+    domain: str, name: str = Query(...), version: str = Query("")
+):
+    return build_engine.agent_dataset_agent_detail(domain, version, name)
+
+
+# ---------------------------------------------------------------------------
 # Static frontend
 # ---------------------------------------------------------------------------
 @app.middleware("http")
@@ -910,16 +1606,27 @@ async def _no_cache_static(request, call_next):
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
-    # The SPA has two URL spaces:
+    # The SPA has four URL spaces:
     #   * `/`           — the root landing (Tools / Skills / Agents cards).
     #   * `/tools/*`    — the tool-observability views (Overview, Benchmark,
     #                     Results, Insights).
+    #   * `/skills/*`   — the skill axis: Benchmark (dataset building) +
+    #                     Results (evaluation).
+    #   * `/agents/*`   — the agent axis: Benchmark (dataset building, which now
+    #                     also hosts the build-inspector Tool-scoping & Coverage
+    #                     views) + Results (evaluation).
     # Direct visits to any of these paths (or a refresh while inside one) must
     # re-serve index.html so the SPA can route client-side.
     SPA_TAB_NAMES: tuple[str, ...] = ("overview", "benchmark", "results", "insights")
+    SKILLS_TAB_NAMES: tuple[str, ...] = ("benchmark", "results")
+    AGENTS_TAB_NAMES: tuple[str, ...] = ("benchmark", "results")
     SPA_ROUTES: tuple[str, ...] = (
         "/tools",
         *(f"/tools/{name}" for name in SPA_TAB_NAMES),
+        "/skills",
+        *(f"/skills/{name}" for name in SKILLS_TAB_NAMES),
+        "/agents",
+        *(f"/agents/{name}" for name in AGENTS_TAB_NAMES),
     )
 
     def _spa_index() -> FileResponse:
